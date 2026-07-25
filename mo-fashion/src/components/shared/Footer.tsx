@@ -1,177 +1,158 @@
 import { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Mail, Phone, MapPin } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Mail, Phone, MapPin, CreditCard, Smartphone, Banknote, HelpCircle, ShieldCheck, Truck } from 'lucide-react';
+import { useSettingsStore } from '../../store/useSettingsStore';
+
+// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
+import { db } from '../../firebase/config';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 export default function Footer() {
-  const location = useLocation();
+  const { settings } = useSettingsStore();
+  const safeSettings = settings as any;
 
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
-    logoUrl: ''
+    logoUrl: '',
+    tagline: 'Premium E-Commerce Experience. OWNER - MD.MEHEDI HASAN . (1589)',
+    contactEmail: 'support@mofashion.com',
+    phoneNumber: '+880 1707697445',
+    address: 'CDA Agrabad, Chattogram, Bangladesh',
+    currency: '৳',
+    shippingInside: 60,
+    shippingOutside: 150,
+    enableBkash: true,
+    enableCard: true,
+    enableCOD: true
   });
 
+  // 🚀 রিয়েল-টাইম ক্লাউড এবং লোকাল সেটিংস লোড করা
   useEffect(() => {
-    const loadSettings = () => {
-      const savedSettings = localStorage.getItem('mo_fashion_settings');
-      if (savedSettings) {
-        try {
-          setSiteSettings(JSON.parse(savedSettings));
-        } catch (e) {
-          console.error("Error loading settings in footer", e);
+    const savedSettings = localStorage.getItem('mo_fashion_settings');
+    if (savedSettings) {
+      try {
+        setSiteSettings((prev: any) => ({ ...prev, ...JSON.parse(savedSettings) }));
+      } catch (e) {}
+    }
+
+    try {
+      const docRef = doc(db, 'settings', 'store_settings');
+      const unsubscribe = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          setSiteSettings((prev: any) => ({ ...prev, ...docSnap.data() }));
         }
-      }
-    };
-
-    loadSettings();
-
-    window.addEventListener('storage', loadSettings);
-    window.addEventListener('settingsUpdated', loadSettings);
-
-    return () => {
-      window.removeEventListener('storage', loadSettings);
-      window.removeEventListener('settingsUpdated', loadSettings);
-    };
+      });
+      return () => unsubscribe();
+    } catch (e) {}
   }, []);
 
-  const isActivePath = (path: string) => {
-    if (path === '/') return location.pathname === '/';
-    return location.pathname.startsWith(path);
-  };
-
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const active = { ...safeSettings, ...siteSettings };
 
   return (
-    <footer className="bg-[#111111] border-t border-[#D4AF37]/20 text-gray-300 pt-16 pb-8 mt-auto">
+    <footer className="bg-[#0A0A0A] border-t border-[#D4AF37]/20 pt-16 pb-12 text-gray-400 mt-auto">
       <div className="container mx-auto px-4">
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
+        {/* 🚀 ৪ কলামের সম্পূর্ণ বিস্তারিত ফুটার সেকশন (আগের কোনো তথ্য বাদ দেওয়া হয়নি) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 pb-12 border-b border-gray-800">
           
-          {/* 🚀 Brand Info (বড় ডায়নামিক লোগো সহ) */}
-          <div>
-            <Link to="/" onClick={scrollToTop} className="items-center space-x-3 mb-4 group inline-block">
-              {siteSettings?.logoUrl && (
+          {/* Column 1: Brand Info & Admin Uploaded Logo */}
+          <div className="space-y-4">
+            <Link to="/" className="flex items-center space-x-3 group">
+              {active?.logoUrl && active.logoUrl.trim() !== '' && (
                 <img 
-                  src={siteSettings.logoUrl} 
+                  src={active.logoUrl} 
                   alt="Logo" 
-                  className="h-14 md:h-18 w-auto max-w-[220px] object-contain drop-shadow transition-transform group-hover:scale-105"
+                  className="h-12 w-auto max-w-[160px] object-contain drop-shadow transition-transform group-hover:scale-105"
                 />
               )}
-              <h3 className="text-2xl font-serif font-bold text-[#D4AF37] tracking-widest">
-                {siteSettings?.storeName || 'MO FASHION'}
-              </h3>
+              <span className="text-2xl font-serif font-bold text-[#D4AF37] tracking-widest">
+                {active?.storeName || 'MO FASHION'}
+              </span>
             </Link>
 
-            <p className="text-gray-400 mb-6 leading-relaxed">
-              Premium E-Commerce Experience. Discover the latest trends in fashion and upgrade your style with our premium collection.
+            <p className="text-sm leading-relaxed text-gray-400">
+              {active?.tagline || 'Premium E-Commerce Experience'}
             </p>
 
-            <div className="flex space-x-4">
-              <a href={siteSettings?.facebook || "https://facebook.com"} target="_blank" rel="noopener noreferrer" className="bg-[#1A1A1A] border border-gray-800 w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-[#D4AF37] hover:border-[#D4AF37]/50 transition-colors font-bold text-sm shadow-md">
-                FB
-              </a>
-              <a href={siteSettings?.instagram || "https://instagram.com"} target="_blank" rel="noopener noreferrer" className="bg-[#1A1A1A] border border-gray-800 w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-[#D4AF37] hover:border-[#D4AF37]/50 transition-colors font-bold text-sm shadow-md">
-                IG
-              </a>
-              <a href={siteSettings?.twitter || "https://twitter.com"} target="_blank" rel="noopener noreferrer" className="bg-[#1A1A1A] border border-gray-800 w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-[#D4AF37] hover:border-[#D4AF37]/50 transition-colors font-bold text-sm shadow-md">
-                X
-              </a>
+            <div className="flex items-center space-x-2 text-xs text-[#D4AF37] pt-2 font-medium">
+              <ShieldCheck size={16} />
+              <span>100% Authentic & Secure Shopping</span>
             </div>
           </div>
 
-          {/* Quick Links */}
+          {/* Column 2: Quick Links (সব লিংক পুনুরুদ্ধার করা হয়েছে) */}
           <div>
-            <h4 className="text-lg font-bold text-white mb-6 uppercase tracking-wide">Quick Links</h4>
-            <ul className="space-y-2">
-              {[
-                { name: 'Home', path: '/' },
-                { name: 'Categories', path: '/categories' },
-                { name: 'About Us', path: '/about' },
-                { name: 'Cart', path: '/cart' },
-              ].map((link) => {
-                const active = isActivePath(link.path);
-                return (
-                  <li key={link.path}>
-                    <Link 
-                      to={link.path} 
-                      onClick={scrollToTop} 
-                      className={`inline-block px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${
-                        active 
-                        ? 'bg-[#D4AF37] text-black font-bold shadow-[0_0_12px_rgba(212,175,55,0.4)] border border-[#D4AF37]' 
-                        : 'text-gray-400 hover:text-[#D4AF37] hover:bg-[#1A1A1A]'
-                      }`}
-                    >
-                      {link.name}
-                    </Link>
-                  </li>
-                );
-              })}
+            <h3 className="text-white font-serif font-bold text-base mb-4 uppercase tracking-wider border-b border-[#D4AF37]/20 pb-2 inline-block">
+              Quick Links
+            </h3>
+            <ul className="space-y-2.5 text-sm">
+              <li><Link to="/" className="hover:text-[#D4AF37] transition-colors">Home</Link></li>
+              <li><Link to="/categories" className="hover:text-[#D4AF37] transition-colors">Categories</Link></li>
+              <li><Link to="/about" className="hover:text-[#D4AF37] transition-colors">About Us</Link></li>
+              <li><Link to="/cart" className="hover:text-[#D4AF37] transition-colors">Shopping Cart</Link></li>
+              <li><Link to="/profile" className="hover:text-[#D4AF37] transition-colors">My Profile / Account</Link></li>
             </ul>
           </div>
 
-          {/* Customer Service */}
+          {/* Column 3: Customer Care & Shipping Info */}
           <div>
-            <h4 className="text-lg font-bold text-white mb-6 uppercase tracking-wide">Customer Service</h4>
-            <ul className="space-y-2">
-              {[
-                { name: 'FAQ', path: '/faq' },
-                { name: 'Shipping & Returns', path: '/shipping' },
-                { name: 'Privacy Policy', path: '/privacy' },
-                { name: 'Terms & Conditions', path: '/terms' },
-              ].map((link) => {
-                const active = isActivePath(link.path);
-                return (
-                  <li key={link.path}>
-                    <Link 
-                      to={link.path} 
-                      onClick={scrollToTop} 
-                      className={`inline-block px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${
-                        active 
-                        ? 'bg-[#D4AF37] text-black font-bold shadow-[0_0_12px_rgba(212,175,55,0.4)] border border-[#D4AF37]' 
-                        : 'text-gray-400 hover:text-[#D4AF37] hover:bg-[#1A1A1A]'
-                      }`}
-                    >
-                      {link.name}
-                    </Link>
-                  </li>
-                );
-              })}
+            <h3 className="text-white font-serif font-bold text-base mb-4 uppercase tracking-wider border-b border-[#D4AF37]/20 pb-2 inline-block">
+              Customer Care
+            </h3>
+            <ul className="space-y-3 text-sm">
+              <li className="flex items-center space-x-2">
+                <Truck size={16} className="text-[#D4AF37]" />
+                <span>Inside Chittagong: {active?.currency || '৳'}{active?.shippingInside || 60}</span>
+              </li>
+              <li className="flex items-center space-x-2">
+                <Truck size={16} className="text-[#D4AF37]" />
+                <span>Outside Chittagong: {active?.currency || '৳'}{active?.shippingOutside || 150}</span>
+              </li>
+              <li className="flex items-center space-x-2 pt-1">
+                <HelpCircle size={16} className="text-[#D4AF37]" />
+                <Link to="/about" className="hover:text-[#D4AF37] transition-colors">FAQs & Support</Link>
+              </li>
             </ul>
           </div>
 
-          {/* Contact Info */}
+          {/* Column 4: Store Contact Information */}
           <div>
-            <h4 className="text-lg font-bold text-white mb-6 uppercase tracking-wide">Contact Us</h4>
-            <ul className="space-y-4">
+            <h3 className="text-white font-serif font-bold text-base mb-4 uppercase tracking-wider border-b border-[#D4AF37]/20 pb-2 inline-block">
+              Contact Us
+            </h3>
+            <ul className="space-y-3 text-sm">
               <li className="flex items-start space-x-3">
-                <MapPin className="text-[#D4AF37] mt-1 shrink-0" size={20} />
-                <span className="text-gray-400">{siteSettings?.address || 'CDA Agrabad, Chattogram, Bangladesh'}</span>
+                <MapPin size={18} className="text-[#D4AF37] shrink-0 mt-0.5" />
+                <span>{active?.address || 'CDA Agrabad, Chattogram, Bangladesh'}</span>
               </li>
               <li className="flex items-center space-x-3">
-                <Phone className="text-[#D4AF37] shrink-0" size={20} />
-                <span className="text-gray-400">{siteSettings?.phoneNumber || '+880 1707697445'}</span>
+                <Phone size={18} className="text-[#D4AF37] shrink-0" />
+                <span>{active?.phoneNumber || '+880 1707697445'}</span>
               </li>
               <li className="flex items-center space-x-3">
-                <Mail className="text-[#D4AF37] shrink-0" size={20} />
-                <span className="text-gray-400">{siteSettings?.contactEmail || 'kon497733@gmail.com'}</span>
+                <Mail size={18} className="text-[#D4AF37] shrink-0" />
+                <span>{active?.contactEmail || 'support@mofashion.com'}</span>
               </li>
             </ul>
           </div>
+
         </div>
 
-        {/* Copyright */}
-        <div className="border-t border-[#D4AF37]/20 pt-8 flex flex-col md:flex-row justify-between items-center">
-          <p className="text-gray-500 text-sm mb-4 md:mb-0">
-            &copy; {new Date().getFullYear()} {siteSettings?.storeName || 'MO FASHION'}. All rights reserved.
-          </p>
-          <div className="flex space-x-4">
-            <span className="text-gray-500 text-sm font-bold tracking-wider">VISA</span>
-            <span className="text-gray-500 text-sm font-bold tracking-wider">MASTERCARD</span>
-            <span className="text-gray-500 text-sm font-bold tracking-wider">BKASH</span>
+        {/* Bottom Bar: Payment Options & Copyright */}
+        <div className="pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs">
+          <p>&copy; {new Date().getFullYear()} {active?.storeName || 'MO FASHION'}. All rights reserved.</p>
+
+          {/* Accepted Payment Badges */}
+          <div className="flex items-center space-x-4">
+            <span className="text-gray-500 uppercase text-[10px] tracking-widest font-bold">Payment Methods:</span>
+            <div className="flex items-center space-x-2">
+              {active?.enableBkash && <span className="bg-[#1A1A1A] border border-gray-800 px-2.5 py-1 rounded text-pink-500 font-bold flex items-center"><Smartphone size={12} className="mr-1"/> bKash</span>}
+              {active?.enableCard && <span className="bg-[#1A1A1A] border border-gray-800 px-2.5 py-1 rounded text-blue-400 font-bold flex items-center"><CreditCard size={12} className="mr-1"/> Card</span>}
+              {active?.enableCOD && <span className="bg-[#1A1A1A] border border-gray-800 px-2.5 py-1 rounded text-[#D4AF37] font-bold flex items-center"><Banknote size={12} className="mr-1"/> COD</span>}
+            </div>
           </div>
         </div>
-        
+
       </div>
     </footer>
   );
