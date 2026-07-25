@@ -3,19 +3,20 @@ import { Link, useLocation } from 'react-router-dom';
 import { ShoppingBag, User, Menu, X, Search } from 'lucide-react';
 import { useCartStore } from '../../store/useCartStore';
 
+// 🚀 ফায়ারবেস ক্লাউড সিঙ্ক
+import { db } from '../../firebase/config';
+import { doc, onSnapshot } from 'firebase/firestore';
+
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
-
-  // 🚀 গ্লোবাল অনলাইন লোগো (যা পৃথিবীর যেকোনো ডিভাইসে ১০০% দেখাবেই)
-  const DEFAULT_LOGO = "https://cdn-icons-png.flaticon.com/512/3081/3081609.png";
 
   const items = useCartStore((state) => state.items);
   const cartCount = items.reduce((total: number, item: any) => total + (item.quantity || 1), 0);
 
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
-    logoUrl: DEFAULT_LOGO
+    logoUrl: ''
   });
 
   const [allProducts, setAllProducts] = useState<any[]>([]);
@@ -23,32 +24,32 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // 🚀 রিয়েল-টাইম লোগো এবং সেটিংস লোড লজিক
+  // 🚀 ১. ক্লাউড ডাটাবেস ও লোকাল মেমোরি থেকে আসল লোগো সিঙ্ক করা (কোনো ফেইক আইকন থাকবে না)
   useEffect(() => {
-    const loadSettings = () => {
-      const savedSettings = localStorage.getItem('mo_fashion_settings');
-      if (savedSettings) {
-        try {
-          const parsed = JSON.parse(savedSettings);
-          setSiteSettings({
-            storeName: parsed.storeName || 'MO FASHION',
-            logoUrl: (parsed.logoUrl && parsed.logoUrl.trim() !== '') ? parsed.logoUrl : DEFAULT_LOGO
-          });
-        } catch (e) {
-          console.error("Error parsing site settings", e);
-        }
+    // প্রথমে লোকাল মেমোরি থেকে পড়া
+    const savedSettings = localStorage.getItem('mo_fashion_settings');
+    if (savedSettings) {
+      try {
+        setSiteSettings(JSON.parse(savedSettings));
+      } catch (e) {
+        console.error("Error parsing site settings", e);
       }
-    };
+    }
 
-    loadSettings();
-
-    window.addEventListener('storage', loadSettings);
-    window.addEventListener('settingsUpdated', loadSettings);
-
-    return () => {
-      window.removeEventListener('storage', loadSettings);
-      window.removeEventListener('settingsUpdated', loadSettings);
-    };
+    // ফায়ারবেস ক্লাউড থেকে লাইভ লোগো সিঙ্ক করা
+    try {
+      const docRef = doc(db, 'settings', 'store_settings');
+      const unsubscribe = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const cloudData = docSnap.data();
+          setSiteSettings(cloudData);
+          localStorage.setItem('mo_fashion_settings', JSON.stringify(cloudData));
+        }
+      });
+      return () => unsubscribe();
+    } catch (err) {
+      console.log("Firebase sync skipped in Navbar.");
+    }
   }, []);
 
   useEffect(() => {
@@ -150,15 +151,17 @@ export default function Navbar() {
     <header className="bg-secondary border-b border-primary/20 sticky top-0 z-50 shadow-md py-2">
       <div className="container mx-auto px-4 flex justify-between items-center gap-4">
         
-        {/* 🚀 লোগো এবং স্টোরের নাম দুটিই একসাথে অল ডিভাইসে দেখাবে */}
+        {/* 🚀 লোগো এবং স্টোরের নাম (শুধুমাত্র আপলোড করা আসল লোগোই দেখাবে) */}
         <div className="flex items-center space-x-3 shrink-0">
           
           <Link to="/" className="flex items-center space-x-3 group shrink-0">
-            <img 
-              src={siteSettings?.logoUrl || DEFAULT_LOGO} 
-              alt="Logo" 
-              className="h-10 md:h-12 w-auto max-w-[140px] md:max-w-[180px] object-contain drop-shadow transition-transform group-hover:scale-105"
-            />
+            {siteSettings?.logoUrl && siteSettings.logoUrl.trim() !== '' && (
+              <img 
+                src={siteSettings.logoUrl} 
+                alt="Logo" 
+                className="h-10 md:h-12 w-auto max-w-[140px] md:max-w-[180px] object-contain drop-shadow transition-transform group-hover:scale-105"
+              />
+            )}
             <span className="text-2xl md:text-3xl font-serif font-bold text-primary tracking-widest">
               {siteSettings?.storeName || 'MO FASHION'}
             </span>
