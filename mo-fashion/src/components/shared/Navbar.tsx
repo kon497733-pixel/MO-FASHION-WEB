@@ -7,29 +7,33 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
 
-  // Zustand স্টোর থেকে রিয়েল-টাইম কার্ট ডাটা
+  // 🚀 গ্লোবাল অনলাইন লোগো (যা পৃথিবীর যেকোনো ডিভাইসে ১০০% দেখাবেই)
+  const DEFAULT_LOGO = "https://cdn-icons-png.flaticon.com/512/3081/3081609.png";
+
   const items = useCartStore((state) => state.items);
   const cartCount = items.reduce((total: number, item: any) => total + (item.quantity || 1), 0);
 
-  // সেটিংস ও লোগো ডাটার জন্য স্টেট
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
-    logoUrl: ''
+    logoUrl: DEFAULT_LOGO
   });
 
-  // সার্চ বারের জন্য স্টেটসমূহ
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [allCategories, setAllCategories] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // ডাটাবেস (Local Storage) থেকে রিয়েল-টাইম লোগো ও সেটিংস লোড করা
+  // 🚀 রিয়েল-টাইম লোগো এবং সেটিংস লোড লজিক
   useEffect(() => {
     const loadSettings = () => {
       const savedSettings = localStorage.getItem('mo_fashion_settings');
       if (savedSettings) {
         try {
-          setSiteSettings(JSON.parse(savedSettings));
+          const parsed = JSON.parse(savedSettings);
+          setSiteSettings({
+            storeName: parsed.storeName || 'MO FASHION',
+            logoUrl: (parsed.logoUrl && parsed.logoUrl.trim() !== '') ? parsed.logoUrl : DEFAULT_LOGO
+          });
         } catch (e) {
           console.error("Error parsing site settings", e);
         }
@@ -47,7 +51,6 @@ export default function Navbar() {
     };
   }, []);
 
-  // প্রোডাক্ট এবং ক্যাটাগরি লোড করা
   useEffect(() => {
     const savedProducts = localStorage.getItem('mo_fashion_products');
     if (savedProducts) {
@@ -66,13 +69,11 @@ export default function Navbar() {
     }
   }, []);
 
-  // 🚀 এক্টিভ পেজ চেক করার হেলপার ফাংশন
   const isActivePath = (path: string) => {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
   };
 
-  // লাইভ সার্চ ফিল্টার
   const filteredResults: any[] = [];
   if (searchQuery.trim().length > 0) {
     const lowerQuery = searchQuery.toLowerCase();
@@ -90,7 +91,6 @@ export default function Navbar() {
     });
   }
 
-  // সার্চ বার UI কম্পোনেন্ট
   const SearchBarComponent = () => (
     <div className="relative w-full z-50">
       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -147,26 +147,24 @@ export default function Navbar() {
   );
 
   return (
-    <header className="bg-secondary border-b border-primary/20 sticky top-0 z-50 shadow-md py-1">
+    <header className="bg-secondary border-b border-primary/20 sticky top-0 z-50 shadow-md py-2">
       <div className="container mx-auto px-4 flex justify-between items-center gap-4">
         
-        {/* 🚀 ১. বড় লোগো + "MO FASHION" + এক্টিভ স্কয়ার বক্স সহ নেভিগেশন লিংক */}
-        <div className="flex items-center space-x-6 shrink-0">
+        {/* 🚀 লোগো এবং স্টোরের নাম দুটিই একসাথে অল ডিভাইসে দেখাবে */}
+        <div className="flex items-center space-x-3 shrink-0">
           
           <Link to="/" className="flex items-center space-x-3 group shrink-0">
-            {siteSettings?.logoUrl && (
-              <img 
-                src={siteSettings.logoUrl} 
-                alt="Logo" 
-                className="h-14 md:h-18 w-auto max-w-[220px] object-contain drop-shadow transition-transform group-hover:scale-105"
-              />
-            )}
+            <img 
+              src={siteSettings?.logoUrl || DEFAULT_LOGO} 
+              alt="Logo" 
+              className="h-10 md:h-12 w-auto max-w-[140px] md:max-w-[180px] object-contain drop-shadow transition-transform group-hover:scale-105"
+            />
             <span className="text-2xl md:text-3xl font-serif font-bold text-primary tracking-widest">
               {siteSettings?.storeName || 'MO FASHION'}
             </span>
           </Link>
 
-          {/* 🚀 ২. স্কয়ার বক্স ও হাইলাইট সহ অপশনসমূহ (Home, Categories, About) */}
+          {/* নেভিগেশন লিংকসমূহ */}
           <nav className="hidden lg:flex items-center space-x-3 pl-4 border-l border-primary/20">
             <Link 
               to="/" 
@@ -204,12 +202,12 @@ export default function Navbar() {
 
         </div>
 
-        {/* ৩. ডেস্কটপ সার্চ বার */}
+        {/* ডেস্কটপ সার্চ বার */}
         <div className="hidden md:block flex-1 max-w-sm mx-4">
           <SearchBarComponent />
         </div>
 
-        {/* ৪. আইকন সমূহ (কার্ট এবং প্রোফাইল) */}
+        {/* আইকন সমূহ */}
         <div className="hidden md:flex items-center space-x-6 shrink-0">
           <Link to="/cart" className="text-white hover:text-primary transition-colors relative">
             <ShoppingBag size={24} />
@@ -274,7 +272,7 @@ export default function Navbar() {
             >
               About
             </Link>
-            
+
             <div className="flex space-x-6 pt-4 border-t border-primary/10">
               <Link to="/cart" className="text-white hover:text-primary flex items-center space-x-2" onClick={() => setIsOpen(false)}>
                 <ShoppingBag size={20} /> <span>Cart ({cartCount})</span>

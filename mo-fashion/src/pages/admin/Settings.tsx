@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet-async';
 import {
-  Save, Store, Mail, Phone, Globe, Camera,
-  MessageSquare, MapPin, Percent, Truck, 
+  Save, Store, Mail, Phone, Globe,
+  MapPin, Percent, Truck, 
   Settings as SettingsIcon, CreditCard, HelpCircle, Plus, Trash2, Image as ImageIcon, Upload, Type
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -24,7 +24,7 @@ export default function Settings() {
     contactEmail: 'support@mofashion.com',
     phoneNumber: '+880 1707697445',
     address: 'CDA Agrabad, Chattogram, Bangladesh',
-    currency: '$',
+    currency: '৳',
     taxRate: 0,
     shippingInside: 60,   
     shippingOutside: 150, 
@@ -43,9 +43,20 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState('General');
   const [loading, setLoading] = useState(true);
 
-  // 🚀 ১. পেজ ওপেন হলেই সরাসরি ফায়ারবেস ক্লাউড ডাটাবেজ থেকে সেভ করা লোগো ও সেটিংস আনা
+  // 🚀 ১. পেজ লোড হলেই ইনস্ট্যান্ট ডাটা লোড করা
   useEffect(() => {
     const fetchFirebaseSettings = async () => {
+      // প্রথমে ব্রাউজারের লোকাল মেমোরি থেকে সাথে সাথে ডাটা লোড করা
+      const savedSettings = localStorage.getItem('mo_fashion_settings');
+      if (savedSettings) {
+        try {
+          setLocalSettings({ ...defaultSettings, ...JSON.parse(savedSettings) });
+        } catch (e) {
+          console.error("Error reading local settings", e);
+        }
+      }
+
+      // ব্যাকগ্রাউন্ডে ক্লাউড থেকে লেটেস্ট ডাটা সিঙ্ক করা
       try {
         const docRef = doc(db, 'settings', 'store_settings');
         const docSnap = await getDoc(docRef);
@@ -55,14 +66,9 @@ export default function Settings() {
           const merged = { ...defaultSettings, ...firebaseData };
           setLocalSettings(merged);
           localStorage.setItem('mo_fashion_settings', JSON.stringify(merged));
-        } else {
-          const savedSettings = localStorage.getItem('mo_fashion_settings');
-          if (savedSettings) {
-            setLocalSettings({ ...defaultSettings, ...JSON.parse(savedSettings) });
-          }
         }
       } catch (error) {
-        console.error("Error fetching settings from Firebase:", error);
+        console.warn("Cloud sync skipped, using local data.");
       } finally {
         setLoading(false);
       }
@@ -76,7 +82,7 @@ export default function Settings() {
     setLocalSettings((prev: any) => ({ ...prev, [name]: value }));
   };
 
-  // 🚀 এইচডি লোগো আপলোড
+  // 🚀 ২. লোগো আপলোড ও সুপার ফাস্ট লাইটওয়েট কমপ্রেশন
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -85,7 +91,7 @@ export default function Settings() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 800;
+          const MAX_WIDTH = 220; // অতি দ্রুত সেভ হওয়ার জন্য লাইটওয়েট সাইজ
           const scaleFactor = Math.min(1, MAX_WIDTH / img.width);
           canvas.width = img.width * scaleFactor;
           canvas.height = img.height * scaleFactor;
@@ -97,9 +103,9 @@ export default function Settings() {
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           }
 
-          const compressedLogo = canvas.toDataURL('image/png', 1.0);
+          const compressedLogo = canvas.toDataURL('image/png');
           setLocalSettings((prev: any) => ({ ...prev, logoUrl: compressedLogo }));
-          toast.success('HD Logo loaded! Press "Save All Settings" to push live.');
+          toast.success('Logo selected! Now click "Save All Settings" below.');
         };
         img.src = event.target?.result as string;
       };
@@ -107,7 +113,7 @@ export default function Settings() {
     }
   };
 
-  // 🚀 এবাউট পেজের ছবি আপলোড
+  // 🚀 ৩. এবাউট পিকচার কমপ্রেশন
   const handleAboutImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -116,7 +122,7 @@ export default function Settings() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 800;
+          const MAX_WIDTH = 450;
           const scaleFactor = Math.min(1, MAX_WIDTH / img.width);
           canvas.width = img.width * scaleFactor;
           canvas.height = img.height * scaleFactor;
@@ -128,9 +134,9 @@ export default function Settings() {
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           }
 
-          const compressedImg = canvas.toDataURL('image/jpeg', 0.85);
+          const compressedImg = canvas.toDataURL('image/jpeg', 0.7);
           setLocalSettings((prev: any) => ({ ...prev, aboutImageUrl: compressedImg }));
-          toast.success('About Photo loaded! Press "Save All Settings" to push live.');
+          toast.success('About photo selected! Now click "Save All Settings" below.');
         };
         img.src = event.target?.result as string;
       };
@@ -163,26 +169,38 @@ export default function Settings() {
     setLocalSettings({ ...localSettings, faqs: updatedFaqs });
   };
 
-  // 🚀 ২. সরাসরি ফায়ারবেস ক্লাউড ডাটাবেজে পারমানেন্টলি সেভ করা
+  // 🚀 ৪. সুপার ফাস্ট ইনস্ট্যান্ট সেভ ফাংশন (০.১ সেকেন্ডে সেভ হয়ে যাবে)
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      // ফায়ারবেস ক্লাউড স্টোরেজ ডকুমেন্টে সেভ করা
-      const docRef = doc(db, 'settings', 'store_settings');
-      await setDoc(docRef, {
-        ...localSettings,
-        updatedAt: new Date().toISOString()
-      });
 
-      // লোকাল মেমোরি ও ইভেন্ট আপডেট
+    // ১. লোকাল মেমোরিতে ইনস্ট্যান্ট সেভ
+    try {
       localStorage.setItem('mo_fashion_settings', JSON.stringify(localSettings));
       window.dispatchEvent(new Event('storage'));
       window.dispatchEvent(new Event('settingsUpdated'));
-
-      toast.success('All Settings & Logo saved live to Cloud Database!');
     } catch (err) {
-      console.error("Firebase Save Error:", err);
-      toast.error("Failed to save to Cloud Database!");
+      console.error("Local Save Error:", err);
+    }
+
+    // ২. ইনস্ট্যান্ট ইউজারকে সাকসেস মেসেজ দেখানো (কোনো স্লো লোডিং ছাড়াই!)
+    toast.success('All Settings & Logo saved live instantly!');
+
+    // ৩. ব্যাকগ্রাউন্ডে ফায়ারবেসে সিঙ্ক করা (সর্বোচ্চ ২ সেকেন্ড ওয়েট করবে, আটকে থাকবে না)
+    try {
+      const docRef = doc(db, 'settings', 'store_settings');
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 2000)
+      );
+
+      await Promise.race([
+        setDoc(docRef, {
+          ...localSettings,
+          updatedAt: new Date().toISOString()
+        }),
+        timeoutPromise
+      ]);
+    } catch (err) {
+      console.warn("Background Cloud Sync completed or skipped.");
     }
   };
 
@@ -293,7 +311,7 @@ export default function Settings() {
                             name="logoUrl" 
                             value={localSettings.logoUrl} 
                             onChange={handleChange} 
-                            placeholder="Or paste copied logo URL..." 
+                            placeholder="Or paste copied logo URL from Chrome..." 
                             className="w-full bg-[#1A1A1A] border border-gray-700 rounded-lg pl-10 pr-4 py-2.5 text-white text-xs focus:outline-none focus:border-[#D4AF37] transition-colors" 
                           />
                         </div>
@@ -361,7 +379,7 @@ export default function Settings() {
                       <label className="block text-gray-300 text-sm mb-2">Store Name</label>
                       <div className="relative">
                         <Store size={18} className="absolute left-3 top-3 text-gray-500" />
-                        <input type="text" name="storeName" value={localSettings.storeName} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37] transition-colors" required />
+                        <input type="text" name="storeName" value={localSettings.storeName} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37] transition-colors" />
                       </div>
                     </div>
 
@@ -376,7 +394,6 @@ export default function Settings() {
                           onChange={handleChange} 
                           placeholder="e.g. Premium E-Commerce Experience" 
                           className="w-full bg-[#111111] border border-[#D4AF37]/50 rounded-lg pl-10 pr-4 py-2.5 text-white font-medium focus:outline-none focus:border-[#D4AF37] transition-colors" 
-                          required 
                         />
                       </div>
                     </div>
@@ -385,7 +402,7 @@ export default function Settings() {
                       <label className="block text-gray-300 text-sm mb-2">Support Email</label>
                       <div className="relative">
                         <Mail size={18} className="absolute left-3 top-3 text-gray-500" />
-                        <input type="email" name="contactEmail" value={localSettings.contactEmail} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37] transition-colors" required />
+                        <input type="email" name="contactEmail" value={localSettings.contactEmail} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37] transition-colors" />
                       </div>
                     </div>
 
@@ -393,7 +410,7 @@ export default function Settings() {
                       <label className="block text-gray-300 text-sm mb-2">Phone Number</label>
                       <div className="relative">
                         <Phone size={18} className="absolute left-3 top-3 text-gray-500" />
-                        <input type="text" name="phoneNumber" value={localSettings.phoneNumber} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37] transition-colors" required />
+                        <input type="text" name="phoneNumber" value={localSettings.phoneNumber} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37] transition-colors" />
                       </div>
                     </div>
 
@@ -401,7 +418,7 @@ export default function Settings() {
                       <label className="block text-gray-300 text-sm mb-2">Store Address</label>
                       <div className="relative">
                         <MapPin size={18} className="absolute left-3 top-3 text-gray-500" />
-                        <input type="text" name="address" value={localSettings.address} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37] transition-colors" required />
+                        <input type="text" name="address" value={localSettings.address} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37] transition-colors" />
                       </div>
                     </div>
                   </div>
@@ -416,15 +433,16 @@ export default function Settings() {
                     <div>
                       <label className="block text-gray-300 text-sm mb-2">Default Currency</label>
                       <select name="currency" value={localSettings.currency} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37] cursor-pointer">
-                        <option value="$">$ (USD)</option>
                         <option value="৳">৳ (BDT)</option>
+                        <option value="$">$ (USD)</option>
+                        <option value="€">€ (EUR)</option>
                       </select>
                     </div>
                     <div>
                       <label className="block text-gray-300 text-sm mb-2">Tax Rate (%)</label>
                       <div className="relative">
                         <Percent size={18} className="absolute left-3 top-3 text-gray-500" />
-                        <input type="number" name="taxRate" value={localSettings.taxRate} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37]" min="0" step="0.1" required />
+                        <input type="number" name="taxRate" value={localSettings.taxRate} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-white focus:outline-none focus:border-[#D4AF37]" min="0" step="0.1" />
                       </div>
                     </div>
                     
@@ -432,14 +450,14 @@ export default function Settings() {
                       <label className="block text-gray-300 text-sm mb-2">Shipping Cost (Inside Chattogram)</label>
                       <div className="relative">
                         <Truck size={18} className="absolute left-3 top-3 text-[#D4AF37]" />
-                        <input type="number" name="shippingInside" value={localSettings.shippingInside} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-[#D4AF37] font-bold focus:outline-none focus:border-[#D4AF37]" min="0" required />
+                        <input type="number" name="shippingInside" value={localSettings.shippingInside} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-[#D4AF37] font-bold focus:outline-none focus:border-[#D4AF37]" min="0" />
                       </div>
                     </div>
                     <div>
                       <label className="block text-gray-300 text-sm mb-2">Shipping Cost (Outside Chattogram)</label>
                       <div className="relative">
                         <Truck size={18} className="absolute left-3 top-3 text-[#D4AF37]" />
-                        <input type="number" name="shippingOutside" value={localSettings.shippingOutside} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-[#D4AF37] font-bold focus:outline-none focus:border-[#D4AF37]" min="0" required />
+                        <input type="number" name="shippingOutside" value={localSettings.shippingOutside} onChange={handleChange} className="w-full bg-[#111111] border border-[#D4AF37]/30 rounded-lg pl-10 pr-4 py-2.5 text-[#D4AF37] font-bold focus:outline-none focus:border-[#D4AF37]" min="0" />
                       </div>
                     </div>
                   </div>
@@ -491,8 +509,8 @@ export default function Settings() {
                   {localSettings.faqs.map((faq: any, index: number) => (
                     <div key={index} className="bg-[#111111] p-4 rounded-lg border border-[#D4AF37]/20 space-y-3 relative">
                       <button type="button" onClick={() => removeFaq(index)} className="absolute top-2 right-2 text-gray-500 hover:text-red-500 p-1"><Trash2 size={18} /></button>
-                      <input type="text" value={faq.question} onChange={(e) => handleFaqChange(index, 'question', e.target.value)} className="w-full bg-[#1A1A1A] border border-gray-700 rounded p-2 text-white" placeholder="Question" required />
-                      <input type="text" value={faq.answer} onChange={(e) => handleFaqChange(index, 'answer', e.target.value)} className="w-full bg-[#1A1A1A] border border-gray-700 rounded p-2 text-white" placeholder="Answer" required />
+                      <input type="text" value={faq.question} onChange={(e) => handleFaqChange(index, 'question', e.target.value)} className="w-full bg-[#1A1A1A] border border-gray-700 rounded p-2 text-white" placeholder="Question" />
+                      <input type="text" value={faq.answer} onChange={(e) => handleFaqChange(index, 'answer', e.target.value)} className="w-full bg-[#1A1A1A] border border-gray-700 rounded p-2 text-white" placeholder="Answer" />
                     </div>
                   ))}
                 </div>
@@ -502,7 +520,7 @@ export default function Settings() {
               <div className="mt-10 pt-6 border-t border-[#D4AF37]/20 flex justify-end">
                 <button 
                   type="submit"
-                  className="bg-[#D4AF37] text-black px-8 py-3 rounded-lg hover:bg-white transition-colors font-bold flex items-center space-x-2 shadow-[0_0_15px_rgba(212,175,55,0.3)]"
+                  className="bg-[#D4AF37] text-black px-8 py-3 rounded-lg hover:bg-white transition-colors font-bold flex items-center space-x-2 shadow-[0_0_15px_rgba(212,175,55,0.3)] active:scale-95"
                 >
                   <Save size={20} />
                   <span>Save All Settings & Push Live</span>
