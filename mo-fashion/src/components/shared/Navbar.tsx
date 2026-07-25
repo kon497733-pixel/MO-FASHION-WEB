@@ -1,0 +1,291 @@
+import { useState, useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { ShoppingBag, User, Menu, X, Search } from 'lucide-react';
+import { useCartStore } from '../../store/useCartStore';
+
+export default function Navbar() {
+  const [isOpen, setIsOpen] = useState(false);
+  const location = useLocation();
+
+  // Zustand স্টোর থেকে রিয়েল-টাইম কার্ট ডাটা
+  const items = useCartStore((state) => state.items);
+  const cartCount = items.reduce((total: number, item: any) => total + (item.quantity || 1), 0);
+
+  // সেটিংস ও লোগো ডাটার জন্য স্টেট
+  const [siteSettings, setSiteSettings] = useState<any>({
+    storeName: 'MO FASHION',
+    logoUrl: ''
+  });
+
+  // সার্চ বারের জন্য স্টেটসমূহ
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [allCategories, setAllCategories] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // ডাটাবেস (Local Storage) থেকে রিয়েল-টাইম লোগো ও সেটিংস লোড করা
+  useEffect(() => {
+    const loadSettings = () => {
+      const savedSettings = localStorage.getItem('mo_fashion_settings');
+      if (savedSettings) {
+        try {
+          setSiteSettings(JSON.parse(savedSettings));
+        } catch (e) {
+          console.error("Error parsing site settings", e);
+        }
+      }
+    };
+
+    loadSettings();
+
+    window.addEventListener('storage', loadSettings);
+    window.addEventListener('settingsUpdated', loadSettings);
+
+    return () => {
+      window.removeEventListener('storage', loadSettings);
+      window.removeEventListener('settingsUpdated', loadSettings);
+    };
+  }, []);
+
+  // প্রোডাক্ট এবং ক্যাটাগরি লোড করা
+  useEffect(() => {
+    const savedProducts = localStorage.getItem('mo_fashion_products');
+    if (savedProducts) {
+      setAllProducts(JSON.parse(savedProducts));
+    }
+
+    const savedCategories = localStorage.getItem('mo_fashion_categories');
+    if (savedCategories) {
+      setAllCategories(JSON.parse(savedCategories));
+    } else {
+      setAllCategories([
+        { id: 1, name: "Men's Collection" },
+        { id: 2, name: "Women's Collection" },
+        { id: 3, name: "Accessories" },
+      ]);
+    }
+  }, []);
+
+  // 🚀 এক্টিভ পেজ চেক করার হেলপার ফাংশন
+  const isActivePath = (path: string) => {
+    if (path === '/') return location.pathname === '/';
+    return location.pathname.startsWith(path);
+  };
+
+  // লাইভ সার্চ ফিল্টার
+  const filteredResults: any[] = [];
+  if (searchQuery.trim().length > 0) {
+    const lowerQuery = searchQuery.toLowerCase();
+    
+    allCategories.forEach(c => {
+      if (c.name.toLowerCase().includes(lowerQuery)) {
+        filteredResults.push({ id: c.id, name: c.name, type: 'Category', link: `/category/${encodeURIComponent(c.name)}` });
+      }
+    });
+
+    allProducts.forEach(p => {
+      if (p.name.toLowerCase().includes(lowerQuery) || p.category.toLowerCase().includes(lowerQuery)) {
+        filteredResults.push({ id: p.id, name: p.name, type: 'Product', link: `/product/${p.id}` });
+      }
+    });
+  }
+
+  // সার্চ বার UI কম্পোনেন্ট
+  const SearchBarComponent = () => (
+    <div className="relative w-full z-50">
+      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <Search size={16} className="text-gray-500" />
+      </div>
+      <input
+        type="text"
+        placeholder="Search for products, categories..."
+        value={searchQuery}
+        onChange={(e) => {
+          setSearchQuery(e.target.value);
+          setShowDropdown(true);
+        }}
+        onFocus={() => setShowDropdown(true)}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+        className="w-full bg-[#111111] border border-gray-800 rounded-full pl-10 pr-4 py-2 text-white focus:outline-none focus:border-[#D4AF37] transition-colors text-sm shadow-inner"
+      />
+
+      {showDropdown && searchQuery.trim().length > 0 && (
+        <div className="absolute top-full left-0 w-full mt-2 bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-xl shadow-2xl overflow-hidden z-50 max-h-80 overflow-y-auto custom-scrollbar">
+          {filteredResults.length > 0 ? (
+            <ul className="py-2">
+              {filteredResults.map((result, index) => (
+                <li key={`${result.type}-${result.id}-${index}`}>
+                  <Link
+                    to={result.link}
+                    onClick={() => {
+                      setSearchQuery('');
+                      setShowDropdown(false);
+                      setIsOpen(false);
+                    }}
+                    className="flex items-center justify-between px-4 py-3 hover:bg-[#111111] transition-colors border-b border-gray-800 last:border-0"
+                  >
+                    <span className="text-white font-medium text-sm truncate pr-4">{result.name}</span>
+                    <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded shrink-0 ${
+                      result.type === 'Category' 
+                      ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' 
+                      : 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20'
+                    }`}>
+                      {result.type}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="p-4 text-center text-gray-500 text-sm font-medium">
+              No results found for "{searchQuery}"
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <header className="bg-secondary border-b border-primary/20 sticky top-0 z-50 shadow-md py-1">
+      <div className="container mx-auto px-4 flex justify-between items-center gap-4">
+        
+        {/* 🚀 ১. বড় লোগো + "MO FASHION" + এক্টিভ স্কয়ার বক্স সহ নেভিগেশন লিংক */}
+        <div className="flex items-center space-x-6 shrink-0">
+          
+          <Link to="/" className="flex items-center space-x-3 group shrink-0">
+            {siteSettings?.logoUrl && (
+              <img 
+                src={siteSettings.logoUrl} 
+                alt="Logo" 
+                className="h-14 md:h-18 w-auto max-w-[220px] object-contain drop-shadow transition-transform group-hover:scale-105"
+              />
+            )}
+            <span className="text-2xl md:text-3xl font-serif font-bold text-primary tracking-widest">
+              {siteSettings?.storeName || 'MO FASHION'}
+            </span>
+          </Link>
+
+          {/* 🚀 ২. স্কয়ার বক্স ও হাইলাইট সহ অপশনসমূহ (Home, Categories, About) */}
+          <nav className="hidden lg:flex items-center space-x-3 pl-4 border-l border-primary/20">
+            <Link 
+              to="/" 
+              className={`transition-all duration-300 font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-lg ${
+                isActivePath('/') && location.pathname === '/'
+                ? 'bg-[#D4AF37] text-black shadow-[0_0_15px_rgba(212,175,55,0.4)] border border-[#D4AF37]' 
+                : 'text-white hover:text-[#D4AF37] hover:bg-[#1A1A1A]'
+              }`}
+            >
+              Home
+            </Link>
+
+            <Link 
+              to="/categories" 
+              className={`transition-all duration-300 font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-lg ${
+                isActivePath('/categories') || isActivePath('/category')
+                ? 'bg-[#D4AF37] text-black shadow-[0_0_15px_rgba(212,175,55,0.4)] border border-[#D4AF37]' 
+                : 'text-white hover:text-[#D4AF37] hover:bg-[#1A1A1A]'
+              }`}
+            >
+              Categories
+            </Link>
+
+            <Link 
+              to="/about" 
+              className={`transition-all duration-300 font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-lg ${
+                isActivePath('/about')
+                ? 'bg-[#D4AF37] text-black shadow-[0_0_15px_rgba(212,175,55,0.4)] border border-[#D4AF37]' 
+                : 'text-white hover:text-[#D4AF37] hover:bg-[#1A1A1A]'
+              }`}
+            >
+              About
+            </Link>
+          </nav>
+
+        </div>
+
+        {/* ৩. ডেস্কটপ সার্চ বার */}
+        <div className="hidden md:block flex-1 max-w-sm mx-4">
+          <SearchBarComponent />
+        </div>
+
+        {/* ৪. আইকন সমূহ (কার্ট এবং প্রোফাইল) */}
+        <div className="hidden md:flex items-center space-x-6 shrink-0">
+          <Link to="/cart" className="text-white hover:text-primary transition-colors relative">
+            <ShoppingBag size={24} />
+            <span className="absolute -top-2 -right-2 bg-primary text-secondary text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+              {cartCount}
+            </span>
+          </Link>
+          <Link to="/profile" className="text-white hover:text-primary transition-colors">
+            <User size={24} />
+          </Link>
+        </div>
+
+        {/* মোবাইল মেনু বাটন */}
+        <button 
+          className="md:hidden text-primary hover:text-white transition-colors" 
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          {isOpen ? <X size={28} /> : <Menu size={28} />}
+        </button>
+      </div>
+
+      {/* মোবাইল মেনু ড্রপডাউন */}
+      {isOpen && (
+        <div className="md:hidden bg-[#1A1A1A] border-t border-primary/20 pb-4 shadow-2xl absolute w-full">
+          <div className="p-4 border-b border-gray-800">
+            <SearchBarComponent />
+          </div>
+
+          <div className="flex flex-col space-y-2 px-4 pt-4">
+            <Link 
+              to="/" 
+              onClick={() => setIsOpen(false)}
+              className={`font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg transition-all ${
+                isActivePath('/') && location.pathname === '/'
+                ? 'bg-[#D4AF37] text-black' 
+                : 'text-white hover:text-primary'
+              }`}
+            >
+              Home
+            </Link>
+
+            <Link 
+              to="/categories" 
+              onClick={() => setIsOpen(false)}
+              className={`font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg transition-all ${
+                isActivePath('/categories') || isActivePath('/category')
+                ? 'bg-[#D4AF37] text-black' 
+                : 'text-white hover:text-primary'
+              }`}
+            >
+              Categories
+            </Link>
+
+            <Link 
+              to="/about" 
+              onClick={() => setIsOpen(false)}
+              className={`font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg transition-all ${
+                isActivePath('/about')
+                ? 'bg-[#D4AF37] text-black' 
+                : 'text-white hover:text-primary'
+              }`}
+            >
+              About
+            </Link>
+            
+            <div className="flex space-x-6 pt-4 border-t border-primary/10">
+              <Link to="/cart" className="text-white hover:text-primary flex items-center space-x-2" onClick={() => setIsOpen(false)}>
+                <ShoppingBag size={20} /> <span>Cart ({cartCount})</span>
+              </Link>
+              <Link to="/profile" className="text-white hover:text-primary flex items-center space-x-2" onClick={() => setIsOpen(false)}>
+                <User size={20} /> <span>Profile</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}
