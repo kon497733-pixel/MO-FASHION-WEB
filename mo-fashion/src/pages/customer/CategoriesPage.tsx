@@ -8,26 +8,14 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 import { db } from '../../firebase/config';
 import { collection, onSnapshot } from 'firebase/firestore';
 
-// 🚀 এইচডি ব্যাকগ্রাউন্ড কভার (যাতে কোনো ডিভাইস কখনো ১ সেকেন্ডের জন্যও ফাঁকা বা কালো না হয়)
-const HD_DEFAULT_BACKGROUNDS: Record<string, string[]> = {
-  "men": ["https://images.unsplash.com/photo-1617137968427-85924c800a22?q=80&w=800&auto=format&fit=crop"],
-  "women": ["https://images.unsplash.com/photo-1539008835657-9e8e9680c956?q=80&w=800&auto=format&fit=crop"],
-  "accessories": ["https://images.unsplash.com/photo-1611591437281-460bfbe1220a?q=80&w=800&auto=format&fit=crop"],
-  "default": ["https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=800&auto=format&fit=crop"]
-};
-
 export default function CategoriesPage() {
   const { settings } = useSettingsStore();
   const safeSettings = settings as any;
 
-  // 🚀 লাইভ মঙ্গোডিবি এপিআই
-  const API_URL = 'https://mo-fashion-api-mehedi.onrender.com/api/products';
-
   const [categories, setCategories] = useState<any[]>([]);
-  const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // 🚀 ২ সেকেন্ডের ব্যাকগ্রাউন্ড অটো-স্লাইড টাইমার
+
+  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে পরিবর্তন করার জন্য টাইমার
   const [imageIndex, setImageIndex] = useState(0);
 
   useEffect(() => {
@@ -37,98 +25,46 @@ export default function CategoriesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 প্রোডাক্ট লোড করা (ক্যাটাগরির ভেতরের ছবি নেওয়ার জন্য)
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const res = await fetch(API_URL);
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            setDbProducts(data);
-            localStorage.setItem('mo_fashion_products', JSON.stringify(data));
-          }
-        }
-      } catch (e) {
-        const localP = localStorage.getItem('mo_fashion_products');
-        if (localP) setDbProducts(JSON.parse(localP));
-      }
-    };
-    fetchProducts();
-  }, []);
+  // 🚀 শুধুমাত্র আপনার (অ্যাডমিনের) আপলোড করা আসল ছবি ফিল্টার করার ফাংশন (কোনো ডামি বা অন্য প্রোডাক্টের ছবি নেবে না)
+  const processCategoryData = (catList: any[]) => {
+    const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
 
-  // 🚀 ১০০% বুলেটপ্রুফ ক্যাটাগরি পিকচার প্রসেসর (কখনো কোনো বক্স কালো বা ফাঁকা থাকবে না)
-  const processCategoryData = (catList: any[], currentProducts: any[]) => {
     return catList.map((cat: any) => {
       const catNameLower = (cat.name || '').trim().toLowerCase();
 
-      // প্রোডাক্ট সংখ্যা হিসাব
-      const categoryProducts = currentProducts.filter(
+      // প্রোডাক্ট সংখ্যা হিসাব করা
+      const count = savedProducts.filter(
         (p: any) => p.category?.trim().toLowerCase() === catNameLower && p.status !== 'Out of Stock'
-      );
+      ).length;
 
-      let displayImages: string[] = [];
+      // 🚀 শুধুমাত্র আপনার আপলোড করা ছবিই নেওয়া হবে
+      let uploadedImages: string[] = [];
 
-      // ১. যদি অ্যাডমিন কাস্টম ছবি আপলোড করে থাকে
       if (Array.isArray(cat.images) && cat.images.length > 0) {
-        displayImages = cat.images.filter((img: string) => img && typeof img === 'string' && img.trim() !== '');
-      } else if (cat.imageUrl && typeof cat.imageUrl === 'string' && cat.imageUrl.trim() !== '') {
-        displayImages = [cat.imageUrl];
+        uploadedImages = cat.images.filter((img: string) => img && typeof img === 'string' && img.trim() !== '');
+      } else if (cat.imageUrl && cat.imageUrl.trim() !== '') {
+        uploadedImages = [cat.imageUrl];
       } else if (cat.image && typeof cat.image === 'string' && cat.image.trim() !== '') {
-        displayImages = [cat.image];
-      }
-
-      // ২. 🚀 যদি ক্যাটাগরিতে ছবি না দেওয়া থাকে, তবে ওই ক্যাটাগরির প্রোডাক্টগুলোর ছবি দিয়ে স্লাইডার বানাবে!
-      if (displayImages.length === 0 && categoryProducts.length > 0) {
-        categoryProducts.forEach((p: any) => {
-          if (p.images && p.images.length > 0) {
-            p.images.forEach((img: string) => {
-              if (img && !img.includes('placeholder') && !displayImages.includes(img)) {
-                displayImages.push(img);
-              }
-            });
-          } else if (p.imageUrl && !displayImages.includes(p.imageUrl)) {
-            displayImages.push(p.imageUrl);
-          }
-        });
-      }
-
-      // ৩. 🚀 যদি ক্যাটাগরিতে এবং প্রোডাক্টেও ছবি না থাকে, তবে এইচডি কভার পিকচার দেখাবে
-      if (displayImages.length === 0) {
-        if (catNameLower.includes('men') && !catNameLower.includes('women')) {
-          displayImages = HD_DEFAULT_BACKGROUNDS.men;
-        } else if (catNameLower.includes('women')) {
-          displayImages = HD_DEFAULT_BACKGROUNDS.women;
-        } else if (catNameLower.includes('access')) {
-          displayImages = HD_DEFAULT_BACKGROUNDS.accessories;
-        } else {
-          displayImages = HD_DEFAULT_BACKGROUNDS.default;
-        }
+        uploadedImages = [cat.image];
       }
 
       return {
         ...cat,
-        count: categoryProducts.length,
-        displayImages // ১০০% নিখুঁত ইমেজেস অ্যারে
+        count,
+        uploadedImages // শুধুমাত্র আপনার দেওয়া আসল ছবি
       };
     });
   };
 
-  // 🚀 রিয়েল-টাইম ফায়ারবেস ক্লাউড সিঙ্ক
+  // 🚀 রিয়েল-টাইম ফায়ারবেস ক্লাউড সিঙ্ক (অল ডিভাইসে সাথে সাথে শো করবে)
   useEffect(() => {
-    // ১. লোকাল মেমোরি থেকে সাথে সাথে ইনস্ট্যান্ট লোড
+    // ১. লোকাল মেমোরি থেকে সাথে সাথে ডাটা লোড
     const savedLocalCats = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
     if (savedLocalCats.length > 0) {
-      setCategories(processCategoryData(savedLocalCats, dbProducts));
-    } else {
-      setCategories(processCategoryData([
-        { id: '1', name: "Men's Collection" },
-        { id: '2', name: "Women's Collection" },
-        { id: '3', name: "Accessories" }
-      ], dbProducts));
+      setCategories(processCategoryData(savedLocalCats));
     }
 
-    // ২. ক্লাউড ফায়ারবেস থেকে সিঙ্ক
+    // ২. ফায়ারবেস ক্লাউড থেকে সরাসরি আসল ছবি লোড
     try {
       const colRef = collection(db, 'categories');
       const unsubscribe = onSnapshot(colRef, (snapshot) => {
@@ -137,11 +73,10 @@ export default function CategoriesPage() {
           cloudCats.push({ id: docSnap.id, ...docSnap.data() });
         });
 
-        const sourceArray = cloudCats.length > 0 ? cloudCats : savedLocalCats;
-        if (sourceArray.length > 0) {
-          const formatted = processCategoryData(sourceArray, dbProducts);
+        if (cloudCats.length > 0) {
+          const formatted = processCategoryData(cloudCats);
           setCategories(formatted);
-          localStorage.setItem('mo_fashion_categories', JSON.stringify(sourceArray));
+          localStorage.setItem('mo_fashion_categories', JSON.stringify(cloudCats));
         }
       });
 
@@ -149,7 +84,7 @@ export default function CategoriesPage() {
     } catch (e) {
       console.warn("Firestore Category Sync Error:", e);
     }
-  }, [dbProducts]);
+  }, []);
 
   // সার্চ ফিল্টার
   const filteredCategories = categories.filter(cat =>
@@ -207,19 +142,27 @@ export default function CategoriesPage() {
                 <div className="relative h-[400px] rounded-2xl overflow-hidden border border-[#D4AF37]/20 hover:border-[#D4AF37] transition-colors duration-500 shadow-lg bg-[#151515]">
                   
                   {/* Background Overlay */}
-                  <div className="absolute inset-0 bg-black/50 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
+                  <div className="absolute inset-0 bg-black/60 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
                   
-                  {/* 🚀 ১০০% গ্যারান্টেড ২ সেকেন্ডের অটো-স্লাইডার (যা কখনো কালো হবে না) */}
-                  {category.displayImages && category.displayImages.map((img: string, idx: number) => (
-                    <img 
-                      key={idx}
-                      src={img} 
-                      alt={category.name} 
-                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
-                        idx === (imageIndex % category.displayImages.length) ? 'opacity-100 group-hover:scale-110 transition-transform duration-700' : 'opacity-0'
-                      }`}
-                    />
-                  ))}
+                  {/* 🚀 শুধুমাত্র আপনার আপলোড করা আসল ছবিগুলোই স্লাইড হবে (কোনো ডামি বা ফেইক ছবি কখনোই আসবে না) */}
+                  {category.uploadedImages && category.uploadedImages.length > 0 ? (
+                    category.uploadedImages.map((img: string, idx: number) => (
+                      <img 
+                        key={idx}
+                        src={img} 
+                        alt={category.name} 
+                        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
+                          idx === (imageIndex % category.uploadedImages.length) ? 'opacity-100 group-hover:scale-110 transition-transform duration-700' : 'opacity-0'
+                        }`}
+                      />
+                    ))
+                  ) : (
+                    /* ছবি আপলোড না করা থাকলে কোনো ফেইক ছবি দেখাবে না, শুধু প্রিমিয়াম ডার্ক ব্যাকগ্রাউন্ড থাকবে */
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#1A1A1A] to-[#0D0D0D] flex flex-col items-center justify-center text-gray-600">
+                      <Layers size={48} className="mb-2 text-[#D4AF37]/30" />
+                      <span className="text-xs uppercase tracking-widest text-gray-500 font-bold">No Image Uploaded</span>
+                    </div>
+                  )}
                   
                   {/* Category Content */}
                   <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center p-6">
@@ -228,7 +171,7 @@ export default function CategoriesPage() {
                     </h2>
                     
                     {/* Items Counter Badge */}
-                    <span className="inline-block px-5 py-1.5 bg-black/60 backdrop-blur-md border border-[#D4AF37]/50 rounded-full text-[#D4AF37] text-sm font-bold tracking-wider mb-6 group-hover:bg-[#D4AF37] group-hover:text-black transition-colors">
+                    <span className="inline-block px-5 py-1.5 bg-black/50 backdrop-blur-md border border-[#D4AF37]/50 rounded-full text-[#D4AF37] text-sm font-bold tracking-wider mb-6 group-hover:bg-[#D4AF37] group-hover:text-black transition-colors">
                       {category.count} {category.count === 1 ? 'Item' : 'Items'}
                     </span>
                     
