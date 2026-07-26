@@ -6,9 +6,9 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 
 // 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
 import { db } from '../../firebase/config';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 
-// ডিফল্ট ইমেজের লিংক (যদি অ্যাডমিন কোনো ছবি না দেয়)
+// ডিফল্ট ইমেজের লিংক
 const defaultImage = "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=600&auto=format&fit=crop";
 
 const categoryImages: Record<string, string> = {
@@ -23,86 +23,87 @@ export default function CategoriesPage() {
 
   const [categories, setCategories] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-
+  
   // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে পরিবর্তন করার জন্য টাইমার স্টেট
   const [imageIndex, setImageIndex] = useState(0);
 
   useEffect(() => {
-    // প্রতি ২ সেকেন্ড পর পর ব্যাকগ্রাউন্ড ছবি চেঞ্জ হবে
     const interval = setInterval(() => {
       setImageIndex((prev) => prev + 1);
     }, 2000);
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 সরাসরি ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম ক্যাটাগরি লোড
-  useEffect(() => {
-    setLoading(true);
-
+  // 🚀 ক্যাটাগরি প্রসেস করার হেলপার ফাংশন
+  const processCategories = (baseCategories: any[]) => {
     const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
 
-    try {
-      const colRef = collection(db, 'categories');
+    if (!baseCategories || baseCategories.length === 0) {
+      baseCategories = [
+        { id: 1, name: "Men's Collection" },
+        { id: 2, name: "Women's Collection" },
+        { id: 3, name: "Accessories" },
+      ];
+    }
+
+    return baseCategories.map((cat: any) => {
+      const count = savedProducts.filter((p: any) => p.category === cat.name && p.status !== 'Out of Stock').length;
       
-      // ফায়ারবেস ক্লাউড ডাটাবেস লিসেনার
-      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+      let imagesArray: string[] = [];
+      if (Array.isArray(cat.images) && cat.images.length > 0) {
+        imagesArray = cat.images.filter((url: string) => url && url.trim() !== '');
+      } else if (cat.image && typeof cat.image === 'string' && cat.image.trim() !== '') {
+        imagesArray = cat.image.split(/,|\s+/).map((url: string) => url.trim()).filter((url: string) => url.startsWith('http') || url.startsWith('data:image'));
+      }
+
+      if (imagesArray.length === 0) {
+        if (categoryImages[cat.name]) {
+          imagesArray.push(categoryImages[cat.name]);
+        } else {
+          imagesArray.push(defaultImage);
+        }
+      }
+
+      return {
+        ...cat,
+        count,
+        imagesArray
+      };
+    });
+  };
+
+  // 🚀 ০.১ সেকেন্ডে ইনস্ট্যান্ট ক্যাটাগরি লোড লজিক
+  useEffect(() => {
+    // ১. ব্রাউজারের লোকাল মেমোরি থেকে সাথে সাথে ডাটা লোড করা (জিরো লোডিং ওয়েট)
+    const savedCategories = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
+    const initialEnriched = processCategories(savedCategories);
+    setCategories(initialEnriched);
+
+    // ২. ব্যাকগ্রাউন্ডে ক্লাউড ডাটাবেস থেকে ডাটা সিঙ্ক করা
+    const loadCloudCategories = async () => {
+      try {
+        const colRef = collection(db, 'categories');
+        const snapshot = await getDocs(colRef);
+        
         const cloudCats: any[] = [];
         snapshot.forEach((docSnap) => {
           cloudCats.push({ id: docSnap.id, ...docSnap.data() });
         });
 
-        let baseCategories = cloudCats.length > 0 
-          ? cloudCats 
-          : JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
-
-        if (baseCategories.length === 0) {
-          baseCategories = [
-            { id: 1, name: "Men's Collection" },
-            { id: 2, name: "Women's Collection" },
-            { id: 3, name: "Accessories" },
-          ];
+        if (cloudCats.length > 0) {
+          const enriched = processCategories(cloudCats);
+          setCategories(enriched);
+          localStorage.setItem('mo_fashion_categories', JSON.stringify(cloudCats));
         }
+      } catch (e) {
+        console.warn("Silent cloud category fetch skipped.");
+      }
+    };
 
-        // প্রোডাক্ট কাউন্ট ও স্লাইডশো ইমেজ প্রসেসিং
-        const enrichedCategories = baseCategories.map((cat: any) => {
-          const count = savedProducts.filter((p: any) => p.category === cat.name && p.status !== 'Out of Stock').length;
-          
-          let imagesArray: string[] = [];
-          if (Array.isArray(cat.images) && cat.images.length > 0) {
-            imagesArray = cat.images.filter((url: string) => url && url.trim() !== '');
-          } else if (cat.image && typeof cat.image === 'string' && cat.image.trim() !== '') {
-            imagesArray = cat.image.split(/,|\s+/).map((url: string) => url.trim()).filter((url: string) => url.startsWith('http') || url.startsWith('data:image'));
-          }
-
-          if (imagesArray.length === 0) {
-            if (categoryImages[cat.name]) {
-              imagesArray.push(categoryImages[cat.name]);
-            } else {
-              imagesArray.push(defaultImage);
-            }
-          }
-
-          return {
-            ...cat,
-            count,
-            imagesArray
-          };
-        });
-
-        setCategories(enrichedCategories);
-        localStorage.setItem('mo_fashion_categories', JSON.stringify(enrichedCategories));
-        setLoading(false);
-      });
-
-      return () => unsubscribe();
-    } catch (e) {
-      console.error("Firestore Category Fetch Error:", e);
-      setLoading(false);
-    }
+    loadCloudCategories();
   }, []);
 
-  // ক্যাটাগরি পেজের নিজস্ব লাইভ সার্চ ফিল্টার
+  // সার্চ ফিল্টার
   const filteredCategories = categories.filter(cat =>
     cat.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -140,9 +141,8 @@ export default function CategoriesPage() {
           />
         </div>
 
-        {loading ? (
-          <div className="text-center py-20 text-[#D4AF37] animate-pulse font-medium">Loading collections...</div>
-        ) : filteredCategories.length === 0 ? (
+        {filteredCategories.length === 0 ? (
+          /* Empty State */
           <div className="text-center py-20 bg-[#1A1A1A] rounded-2xl border border-dashed border-gray-800 max-w-2xl mx-auto shadow-2xl">
             <ShoppingBag size={64} className="mx-auto text-gray-600 mb-6" />
             <h2 className="text-2xl font-serif font-bold text-white mb-4">No Collections Found</h2>
@@ -154,6 +154,7 @@ export default function CategoriesPage() {
             </Link>
           </div>
         ) : (
+          /* Categories Grid */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-10">
             {filteredCategories.map((category, index) => (
               <Link to={`/category/${encodeURIComponent(category.name)}`} key={index} className="group">
@@ -169,7 +170,7 @@ export default function CategoriesPage() {
                       src={img} 
                       alt={category.name} 
                       className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
-                        idx === (imageIndex % category.imagesArray.length) ? 'opacity-100 group-hover:scale-110 transition-transform' : 'opacity-0'
+                        idx === (imageIndex % category.imagesArray.length) ? 'opacity-100 group-hover:scale-110 transition-transform duration-700' : 'opacity-0'
                       }`}
                     />
                   ))}
