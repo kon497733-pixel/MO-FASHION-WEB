@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 
 // 🚀 ফায়ারবেস ক্লাউড কানেকশন ইমপোর্ট
 import { db } from '../../firebase/config';
-import { collection, getDocs, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useCartStore } from '../../store/useCartStore';
 
@@ -19,40 +19,32 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 🚀 ১. ফায়ারবেস ক্লাউড থেকে রিয়েল-টাইম ডাটা লোড (মুহূর্তের মধ্যে সব ডিভাইসে দেখাবে)
+  // 🚀 ১. সরাসরি ফায়ারবেস ক্লাউড থেকে রিয়েল-টাইম ডাটা লোড লজিক
   useEffect(() => {
-    // প্রথমে লোকাল মেমোরি থেকে দ্রুত লোড করার চেষ্টা (যদি থাকে)
-    const saved = localStorage.getItem('mo_fashion_products');
-    if (saved) {
-      const localData = JSON.parse(saved);
-      setAllProducts(localData);
-      setDisplayProducts(localData);
-      setLoading(false);
-    }
-
-    // এবার ক্লাউড ডাটাবেসের সাথে সরাসরি কানেক্ট হওয়া (Real-time listener)
+    setLoading(true);
+    
+    // ডাটাবেসের 'products' কালেকশন থেকে ডাটা নেওয়ার কুয়েরি
     const q = query(collection(db, 'products'), orderBy('updatedAt', 'desc'));
     
+    // onSnapshot ব্যবহার করা হয়েছে যাতে অ্যাডমিন প্রোডাক্ট অ্যাড করলে সাথে সাথে সব ডিভাইসে চলে আসে
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const prodsArray = querySnapshot.docs.map(docData => ({
-        id: docData.id,
-        ...docData.data()
-      }));
+      const prodsArray: any[] = [];
+      querySnapshot.forEach((doc) => {
+        prodsArray.push({ id: doc.id, ...doc.data() });
+      });
       
       setAllProducts(prodsArray);
       setDisplayProducts(prodsArray);
       setLoading(false);
-      // লোকাল মেমোরি আপডেট করে রাখা পরবর্তী দ্রুত লোডের জন্য
-      localStorage.setItem('mo_fashion_products', JSON.stringify(prodsArray));
     }, (error) => {
-      console.error("Cloud fetch error:", error);
+      console.error("Firestore Fetch Error:", error);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // ২. লাইভ সার্চ লজিক
+  // সার্চ ফিল্টার লজিক
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setDisplayProducts(allProducts);
@@ -108,17 +100,9 @@ export default function Home() {
         </div>
       </section>
 
-      {/* New Arrivals Section */}
-      <section className="py-20 container mx-auto px-4">
-        <div className="text-center mb-10">
-          <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#D4AF37] tracking-wider mb-4 uppercase">
-            NEW ARRIVALS
-          </h2>
-          <div className="w-24 h-1 bg-[#D4AF37] mx-auto opacity-50 rounded-full"></div>
-        </div>
-
-        {/* 🚀 স্মার্ট সার্চ বার */}
-        <div className="max-w-2xl mx-auto mb-16 relative group">
+      {/* Search Bar */}
+      <section className="pt-16 container mx-auto px-4">
+        <div className="max-w-2xl mx-auto mb-10 relative group">
           <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
             <Search className="text-gray-500 group-focus-within:text-[#D4AF37] transition-colors" size={20} />
           </div>
@@ -129,6 +113,16 @@ export default function Home() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#1A1A1A] border border-gray-800 rounded-full pl-14 pr-6 py-4 text-white focus:outline-none focus:border-[#D4AF37] transition-colors shadow-2xl"
           />
+        </div>
+      </section>
+
+      {/* New Arrivals Section */}
+      <section className="py-10 container mx-auto px-4">
+        <div className="text-center mb-10">
+          <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#D4AF37] tracking-wider mb-4 uppercase">
+            NEW ARRIVALS
+          </h2>
+          <div className="w-24 h-1 bg-[#D4AF37] mx-auto opacity-50 rounded-full"></div>
         </div>
 
         {loading ? (
