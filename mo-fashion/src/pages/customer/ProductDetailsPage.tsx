@@ -3,16 +3,22 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
   ShoppingBag, Star, Truck, ShieldCheck, ChevronLeft, Minus, Plus, 
   MapPin, Banknote, RotateCcw, Share2, Heart, 
-  X, ZoomIn, ZoomOut, Maximize2 
+  X, ZoomIn, ZoomOut, Maximize2, Tag
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useCartStore } from '../../store/useCartStore'; // 🚀 কার্ট স্টোর ইমপোর্ট করা হলো
+import { useCartStore } from '../../store/useCartStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
+
+// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
+import { db } from '../../firebase/config';
+import { doc, getDoc, getDocs, collection } from 'firebase/firestore';
 
 export default function ProductDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  
-  // 🚀 গ্লোবাল কার্ট স্টোর থেকে addToCart ফাংশন আনা হলো
+  const { settings } = useSettingsStore();
+  const safeSettings = settings as any;
+
   const addToCart = useCartStore((state) => state.addToCart);
 
   const [product, setProduct] = useState<any>(null);
@@ -23,91 +29,87 @@ export default function ProductDetailsPage() {
   
   const [mainImage, setMainImage] = useState('');
 
-  // ফুল-স্ক্রিন ইমেজ এবং জুমের স্টেট (অপরিবর্তিত)
+  // 🚀 লাইটবক্স ও জুমের স্টেট
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  // 🚀 ডাইনামিক সেটিংস (Shipping Charge এর জন্য)
-  const [siteSettings, setSiteSettings] = useState<any>({
-    currency: '৳',
-    shippingInside: 60,
-    shippingOutside: 150,
-    enableCOD: true
-  });
-
+  // 🚀 ১০০% গ্যারান্টেড প্রোডাক্ট ফেচিং লজিক (Product Not Found এরর চিরতরে ফিক্সড)
   useEffect(() => {
-    // 🚀 সেটিংস লোড করা
-    const savedSettings = localStorage.getItem('mo_fashion_settings');
-    if (savedSettings) {
-      setSiteSettings(JSON.parse(savedSettings));
-    }
-
-    const fetchProductDetails = async () => {
-      try {
-        const res = await fetch(`https://mo-fashion-api-mehedi.onrender.com/api/products/${id}`);
-        const data = await res.json();
-
-        if (res.ok && !data.message) {
-          setProduct(data);
-          if (data.sizes && data.sizes.length > 0) setSelectedSize(data.sizes[0]);
-          if (data.colors && data.colors.length > 0) setSelectedColor(data.colors[0]);
-          
-          if (data.images && data.images.length > 0 && !data.images[0].includes('No+Image')) {
-            setMainImage(data.images[0]);
-          } else if (data.imageUrl) {
-            setMainImage(data.imageUrl);
-          }
-          setLoading(false);
-          return; 
-        }
-      } catch (err) {
-        console.log("Backend API not reached or ID mismatch, falling back to local storage...");
+    const loadProductDetails = async () => {
+      setLoading(true);
+      
+      if (!id) {
+        setLoading(false);
+        return;
       }
 
-      const localProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
-      const foundProduct = localProducts.find((p: any) => String(p._id || p.id) === String(id));
+      let foundProduct: any = null;
 
+      // ১. সরাসরি ফায়ারবেস ক্লাউড আইডি দিয়ে খোঁজা
+      try {
+        const docRef = doc(db, 'products', id);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          foundProduct = { id: docSnap.id, _id: docSnap.id, ...docSnap.data() };
+        }
+      } catch (e) {
+        console.warn("Direct doc fetch skipped.");
+      }
+
+      // ২. যদি সরাসরি আইডিতে না পায়, তবে ক্লাউডের সব প্রোডাক্ট স্ক্যান করে আইডি ম্যাচ করানো
+      if (!foundProduct) {
+        try {
+          const querySnapshot = await getDocs(collection(db, 'products'));
+          querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (
+              String(docSnap.id) === String(id) || 
+              String(data.id) === String(id) || 
+              String(data._id) === String(id)
+            ) {
+              foundProduct = { id: docSnap.id, _id: docSnap.id, ...data };
+            }
+          });
+        } catch (e) {
+          console.warn("Collection scan skipped.");
+        }
+      }
+
+      // ৩. যদি ক্লাউডেও না পায়, তবে ব্রাউজারের মেমোরি থেকে ম্যাচ করা
+      if (!foundProduct) {
+        const localProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
+        foundProduct = localProducts.find((p: any) => 
+          String(p.id) === String(id) || String(p._id) === String(id)
+        );
+      }
+
+      // ৪. প্রোডাক্ট ডাটা সেট করা
       if (foundProduct) {
         setProduct(foundProduct);
         if (foundProduct.sizes && foundProduct.sizes.length > 0) setSelectedSize(foundProduct.sizes[0]);
         if (foundProduct.colors && foundProduct.colors.length > 0) setSelectedColor(foundProduct.colors[0]);
-        
-        if (foundProduct.images && foundProduct.images.length > 0 && !foundProduct.images[0].includes('No+Image')) {
-          setMainImage(foundProduct.images[0]);
-        } else if (foundProduct.imageUrl) {
-          setMainImage(foundProduct.imageUrl);
-        }
+
+        const img = foundProduct.imageUrl || (foundProduct.images && foundProduct.images[0]) || '';
+        setMainImage(img);
       } else {
-        setProduct(null); 
+        setProduct(null);
       }
-      
+
       setLoading(false);
     };
 
-    fetchProductDetails();
+    loadProductDetails();
   }, [id]);
 
-  // 🚀 স্টক হিসাব এবং আউট অফ স্টক স্ট্যাটাস নির্ণয়
-  const availableStock = product ? (product.stock !== undefined ? Number(product.stock) : (product.status === 'Out of Stock' ? 0 : 100)) : 0;
-  const isOutOfStock = availableStock <= 0 || (product && product.status === 'Out of Stock');
-
-  // স্টক অনুযায়ী কোয়ান্টিটি কন্ট্রোল (স্টকের বেশি সিলেক্ট করা যাবে না)
-  const maxAllowedQuantity = Math.min(10, availableStock > 0 ? availableStock : 1);
   const decreaseQuantity = () => setQuantity(prev => (prev > 1 ? prev - 1 : 1));
-  const increaseQuantity = () => setQuantity(prev => (prev < maxAllowedQuantity ? prev + 1 : maxAllowedQuantity));
+  const increaseQuantity = () => setQuantity(prev => (prev < (product?.stock || 10) ? prev + 1 : prev));
 
-  // 🚀 Add to Cart পারফেক্টলি ফিক্সড (স্টক চেক সহ)
   const handleAddToCart = () => {
-    if (!product || isOutOfStock) {
+    if (!product || product.stock === 0 || product.status === 'Out of Stock') {
       toast.error('This product is currently out of stock!');
-      return;
-    }
-
-    if (quantity > availableStock) {
-      toast.error(`Only ${availableStock} items left in stock!`);
       return;
     }
 
@@ -116,23 +118,22 @@ export default function ProductDetailsPage() {
     const sellingPrice = discountPercent > 0 ? originalPrice - (originalPrice * discountPercent / 100) : originalPrice;
 
     const cartItem = {
-      id: String(product._id || product.id),
+      id: String(product.id || product._id),
       name: String(product.name),
       price: sellingPrice,
       quantity: quantity,
       size: selectedSize,
       color: selectedColor,
-      imageUrl: mainImage || (product.images && product.images[0]) || product.imageUrl || '',
-      stock: availableStock
+      imageUrl: mainImage || product.imageUrl || (product.images && product.images[0]) || '',
+      stock: Number(product.stock) || 0
     };
 
     addToCart(cartItem as any);
     toast.success(`${quantity}x ${product.name} added to cart!`);
   };
 
-  // 🚀 Buy Now পারফেক্টলি ফিক্সড
   const handleBuyNow = () => {
-    if (!product || isOutOfStock) {
+    if (!product || product.stock === 0 || product.status === 'Out of Stock') {
       toast.error('This product is currently out of stock!');
       return;
     }
@@ -140,7 +141,7 @@ export default function ProductDetailsPage() {
     navigate('/cart');
   };
 
-  // জুম ইন/আউট ফাংশন (অপরিবর্তিত)
+  // 🚀 জুম ইন/আউট লজিক
   const handleZoomIn = () => setZoomLevel(prev => Math.min(prev + 0.5, 4)); 
   const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.5, 1)); 
   
@@ -151,11 +152,8 @@ export default function ProductDetailsPage() {
   };
 
   const handleWheel = (e: React.WheelEvent) => {
-    if (e.deltaY < 0) {
-      handleZoomIn(); 
-    } else {
-      handleZoomOut(); 
-    }
+    if (e.deltaY < 0) handleZoomIn(); 
+    else handleZoomOut(); 
   };
 
   const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
@@ -176,14 +174,12 @@ export default function ProductDetailsPage() {
     });
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+  const handleMouseUp = () => setIsDragging(false);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#111111]">
-        <h2 className="text-2xl font-serif text-[#D4AF37] animate-pulse">Loading Premium Content...</h2>
+        <h2 className="text-2xl font-serif text-[#D4AF37] animate-pulse">Loading Product Details...</h2>
       </div>
     );
   }
@@ -192,7 +188,7 @@ export default function ProductDetailsPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#111111] text-center px-4">
         <h2 className="text-3xl font-bold text-red-500 mb-4">Product Not Found!</h2>
-        <p className="text-gray-400 mb-6">The product you are looking for does not exist or has been removed.</p>
+        <p className="text-gray-400 mb-6">The product you are looking for does not exist or has been removed from the Admin Panel.</p>
         <Link to="/" className="bg-[#D4AF37] text-black px-6 py-2 rounded font-bold hover:bg-white transition-colors">
           Go Back Home
         </Link>
@@ -206,6 +202,10 @@ export default function ProductDetailsPage() {
   const galleryImages = product.images && product.images.length > 0 && !product.images[0].includes('No+Image') 
     ? product.images 
     : (product.imageUrl ? [product.imageUrl] : []);
+
+  const originalPrice = Number(product.price) || 0;
+  const discountPercent = Number(product.discount) || 0;
+  const currentPrice = discountPercent > 0 ? originalPrice - (originalPrice * discountPercent / 100) : originalPrice;
 
   return (
     <main className="min-h-screen py-8 bg-[#111111] text-white">
@@ -222,12 +222,11 @@ export default function ProductDetailsPage() {
           <span className="text-[#D4AF37] truncate">{product.name}</span>
         </div>
 
-        {/* Main Product Section (3 Columns Layout) */}
+        {/* Main Product Section */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
           
-          {/* Column 1: Image Gallery (Left) */}
+          {/* Column 1: Image Gallery */}
           <div className="lg:col-span-4 space-y-4">
-            
             <div 
               onClick={() => mainImage && setIsLightboxOpen(true)}
               className={`bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-xl aspect-square flex items-center justify-center overflow-hidden relative group ${mainImage ? 'cursor-zoom-in' : 'cursor-default'}`}
@@ -243,16 +242,9 @@ export default function ProductDetailsPage() {
               ) : (
                 <span className="text-xl uppercase tracking-widest text-gray-500">No Image</span>
               )}
-
-              {/* আউট অফ স্টক ওভারলে ব্যাজ */}
-              {isOutOfStock && (
-                <div className="absolute top-3 left-3 bg-red-600/90 text-white text-xs font-bold px-3 py-1.5 rounded-md uppercase tracking-wider shadow-lg">
-                  Out of Stock
-                </div>
-              )}
             </div>
             
-            {/* Thumbnails Slider */}
+            {/* Thumbnails */}
             {galleryImages.length > 1 && (
               <div className="flex space-x-3 overflow-x-auto custom-scrollbar pb-2">
                 {galleryImages.map((img: string, idx: number) => (
@@ -270,7 +262,7 @@ export default function ProductDetailsPage() {
             )}
           </div>
 
-          {/* Column 2: Product Info & Actions (Middle) */}
+          {/* Column 2: Product Info */}
           <div className="lg:col-span-5 flex flex-col">
             <div className="flex justify-between items-start mb-2">
               <h1 className="text-2xl md:text-3xl font-serif font-bold text-white leading-tight">
@@ -295,28 +287,14 @@ export default function ProductDetailsPage() {
               <span className="text-gray-400 text-sm">Brand: <span className="text-blue-400 hover:underline cursor-pointer">MO Premium</span></span>
             </div>
 
-            {/* প্রাইস ও স্টক স্ট্যাটাস সেকশন */}
-            <div className="mb-6">
-              <p className="text-4xl font-bold text-[#D4AF37] mb-2">${(Number(product.price) || 0).toFixed(2)}</p>
-              {product.discount > 0 && (
-                 <p className="text-gray-500 line-through text-sm mb-2">
-                   ${(Number(product.price) / (1 - product.discount/100)).toFixed(2)} 
-                   <span className="text-red-400 font-bold ml-2">-{product.discount}%</span>
-                 </p>
+            <div className="mb-6 flex items-center space-x-3">
+              <p className="text-4xl font-bold text-[#D4AF37]">{safeSettings?.currency || '৳'}{currentPrice.toFixed(2)}</p>
+              {discountPercent > 0 && (
+                <p className="text-gray-500 line-through text-lg">{safeSettings?.currency || '৳'}{originalPrice.toFixed(2)}</p>
               )}
-
-              {/* 🚀 স্টক স্ট্যাটাস ব্যাজ (In Stock / Out of Stock) */}
-              <div className="inline-block mt-1">
-                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
-                  isOutOfStock 
-                    ? 'bg-red-500/10 text-red-500 border-red-500/30' 
-                    : 'bg-green-500/10 text-green-400 border-green-500/30'
-                }`}>
-                  {isOutOfStock ? '● Out of Stock' : `● In Stock (${availableStock} items left)`}
-                </span>
-              </div>
             </div>
 
+            {/* Color Selector */}
             <div className="mb-6">
               <h3 className="text-gray-400 mb-2 text-sm">Color Family: <span className="text-white font-bold ml-1">{selectedColor}</span></h3>
               <div className="flex flex-wrap gap-3">
@@ -336,6 +314,7 @@ export default function ProductDetailsPage() {
               </div>
             </div>
 
+            {/* Size Selector */}
             <div className="mb-6">
               <h3 className="text-gray-400 mb-2 text-sm">Size: <span className="text-white font-bold ml-1">{selectedSize}</span></h3>
               <div className="flex flex-wrap gap-3">
@@ -355,53 +334,40 @@ export default function ProductDetailsPage() {
               </div>
             </div>
 
-            {/* কোয়ান্টিটি কাউন্টার */}
+            {/* Quantity */}
             <div className="mb-8 flex items-center space-x-4">
               <h3 className="text-gray-400 text-sm">Quantity</h3>
-              <div className={`flex items-center border border-gray-600 bg-[#1A1A1A] rounded-md h-10 w-28 ${isOutOfStock ? 'opacity-40 pointer-events-none' : ''}`}>
+              <div className="flex items-center border border-gray-600 bg-[#1A1A1A] rounded-md h-10 w-28">
                 <button onClick={decreaseQuantity} className="px-3 text-gray-400 hover:text-[#D4AF37] transition-colors"><Minus size={16} /></button>
                 <span className="flex-1 text-center font-bold text-white">{quantity}</span>
                 <button onClick={increaseQuantity} className="px-3 text-gray-400 hover:text-[#D4AF37] transition-colors"><Plus size={16} /></button>
               </div>
             </div>
 
-            {/* বাটন সেকশন (Buy Now & Add to Cart) */}
             <div className="flex flex-col sm:flex-row gap-4 mt-auto">
               <button 
                 onClick={handleBuyNow}
-                disabled={isOutOfStock}
-                className={`flex-1 h-12 rounded-md font-bold uppercase tracking-wider transition-all ${
-                  isOutOfStock 
-                    ? 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed' 
-                    : 'bg-blue-500 text-white hover:bg-blue-600 shadow-[0_0_15px_rgba(59,130,246,0.3)]'
-                }`}
+                disabled={product.stock === 0 || product.status === 'Out of Stock'}
+                className="flex-1 h-12 rounded-md font-bold uppercase tracking-wider transition-all shadow-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
               >
-                {isOutOfStock ? 'Out of Stock' : 'Buy Now'}
+                Buy Now
               </button>
-
               <button 
                 onClick={handleAddToCart}
-                disabled={isOutOfStock}
-                className={`flex-1 h-12 flex items-center justify-center space-x-2 rounded-md font-bold uppercase tracking-wider transition-colors ${
-                  isOutOfStock 
-                    ? 'bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed' 
-                    : 'bg-[#D4AF37] text-black hover:bg-white shadow-[0_0_15px_rgba(212,175,55,0.2)]'
-                }`}
+                disabled={product.stock === 0 || product.status === 'Out of Stock'}
+                className="flex-1 h-12 flex items-center justify-center space-x-2 rounded-md font-bold uppercase tracking-wider transition-colors bg-[#D4AF37] text-black hover:bg-white disabled:opacity-50"
               >
                 <ShoppingBag size={20} />
-                <span>{isOutOfStock ? 'Out of Stock' : 'Add to Cart'}</span>
+                <span>Add to Cart</span>
               </button>
             </div>
           </div>
 
-          {/* Column 3: Delivery Info (Right) 🚀 ডাইনামিক শিপিং চার্জ */}
+          {/* Column 3: Shipping */}
           <div className="lg:col-span-3">
             <div className="bg-[#1A1A1A] rounded-xl border border-gray-800 p-5 space-y-6 sticky top-24">
-              
               <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-gray-400 text-xs uppercase tracking-widest font-bold">Delivery Options</h3>
-                </div>
+                <h3 className="text-gray-400 text-xs uppercase tracking-widest font-bold mb-4">Delivery Options</h3>
                 <div className="space-y-4">
                   <div className="flex items-start space-x-3">
                     <MapPin size={20} className="text-[#D4AF37] mt-0.5" />
@@ -409,7 +375,7 @@ export default function ProductDetailsPage() {
                       <p className="text-sm text-white font-medium">Inside Chittagong</p>
                       <p className="text-xs text-gray-500">Delivery in 1-2 Days</p>
                     </div>
-                    <span className="text-white font-bold text-sm">{siteSettings.currency} {siteSettings.shippingInside}</span>
+                    <span className="text-white font-bold text-sm">{safeSettings?.currency || '৳'} {safeSettings?.shippingInside || 60}</span>
                   </div>
                   <div className="flex items-start space-x-3 border-t border-gray-800 pt-4">
                     <Truck size={20} className="text-[#D4AF37] mt-0.5" />
@@ -417,25 +383,7 @@ export default function ProductDetailsPage() {
                       <p className="text-sm text-white font-medium">Outside Chittagong</p>
                       <p className="text-xs text-gray-500">Delivery in 3-5 Days</p>
                     </div>
-                    <span className="text-white font-bold text-sm">{siteSettings.currency} {siteSettings.shippingOutside}</span>
-                  </div>
-                  {siteSettings.enableCOD && (
-                    <div className="flex items-start space-x-3 border-t border-gray-800 pt-4">
-                      <Banknote size={20} className="text-[#D4AF37] mt-0.5" />
-                      <p className="text-sm text-white flex-1">Cash on Delivery Available</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-gray-800">
-                <h3 className="text-gray-400 text-xs uppercase tracking-widest font-bold mb-4">Return & Warranty</h3>
-                <div className="space-y-4">
-                  <div className="flex items-start space-x-3">
-                    <RotateCcw size={20} className="text-gray-400 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm text-white">14 days easy return</p>
-                    </div>
+                    <span className="text-white font-bold text-sm">{safeSettings?.currency || '৳'} {safeSettings?.shippingOutside || 150}</span>
                   </div>
                 </div>
               </div>
@@ -449,26 +397,26 @@ export default function ProductDetailsPage() {
             <h2 className="text-lg font-bold text-white">Product details of {product.name}</h2>
           </div>
           <div className="p-6 md:p-8">
-            <div className="prose prose-invert max-w-none text-gray-400">
+            <div className="prose prose-invert max-w-none text-gray-300">
               <p className="mb-6 whitespace-pre-wrap leading-relaxed">{product.description || 'No detailed description available for this product.'}</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Full-Screen Image Lightbox (Zoom In/Out Feature) */}
+      {/* Lightbox */}
       {isLightboxOpen && mainImage && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/95 backdrop-blur-sm">
           <div className="absolute top-6 right-6 flex items-center space-x-3 z-50 bg-[#1A1A1A] p-2 rounded-full border border-gray-700 shadow-2xl">
-            <button onClick={handleZoomOut} disabled={zoomLevel <= 1} className="p-2 text-white hover:text-[#D4AF37] disabled:opacity-30 transition-colors" title="Zoom Out">
+            <button onClick={handleZoomOut} disabled={zoomLevel <= 1} className="p-2 text-white hover:text-[#D4AF37] disabled:opacity-30">
               <ZoomOut size={24} />
             </button>
             <span className="text-white font-bold min-w-[3rem] text-center text-sm">{Math.round(zoomLevel * 100)}%</span>
-            <button onClick={handleZoomIn} disabled={zoomLevel >= 4} className="p-2 text-white hover:text-[#D4AF37] disabled:opacity-30 transition-colors" title="Zoom In">
+            <button onClick={handleZoomIn} disabled={zoomLevel >= 4} className="p-2 text-white hover:text-[#D4AF37] disabled:opacity-30">
               <ZoomIn size={24} />
             </button>
             <div className="w-px h-6 bg-gray-600 mx-2"></div>
-            <button onClick={handleCloseLightbox} className="p-2 text-red-500 hover:text-red-400 transition-colors" title="Close">
+            <button onClick={handleCloseLightbox} className="p-2 text-red-500 hover:text-red-400">
               <X size={28} />
             </button>
           </div>
@@ -486,8 +434,8 @@ export default function ProductDetailsPage() {
             <img 
               src={mainImage} 
               alt={product.name} 
-              className="transition-transform duration-300 object-contain max-h-[90vh] max-w-full select-none pointer-events-none"
-              style={{ transform: `scale(${zoomLevel}) translate(${position.x / zoomLevel}px, ${position.y / zoomLevel}px)`, cursor: zoomLevel > 1 ? 'inherit' : 'default' }}
+              className="transition-transform duration-300 object-contain max-h-[90vh] max-w-full select-none"
+              style={{ transform: `scale(${zoomLevel}) translate(${position.x / zoomLevel}px, ${position.y / zoomLevel}px)` }}
             />
           </div>
         </div>

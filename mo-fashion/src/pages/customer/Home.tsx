@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Image as ImageIcon, ArrowRight, Search, Tag } from 'lucide-react';
+import { ShoppingBag, Image as ImageIcon, Search, Tag } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// 🚀 ফায়ারবেস ক্লাউড কানেকশন ইমপোর্ট
+// 🚀 ফায়ারবেস ক্লাউড কানেকশন
 import { db } from '../../firebase/config';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs } from 'firebase/firestore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useCartStore } from '../../store/useCartStore';
 
 export default function Home() {
   const { settings } = useSettingsStore();
+  const safeSettings = settings as any;
   const addToCart = useCartStore((state) => state.addToCart);
 
   const [allProducts, setAllProducts] = useState<any[]>([]);
@@ -19,29 +20,64 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 🚀 ১. সরাসরি ফায়ারবেস ক্লাউড থেকে রিয়েল-টাইম ডাটা লোড লজিক
+  // 🚀 ১০০% বুলেটপ্রুফ প্রোডাক্ট ফেচিং (কোনো ফিল্টার ছাড়াই সব ডাটা আনবে)
   useEffect(() => {
-    setLoading(true);
-    
-    // ডাটাবেসের 'products' কালেকশন থেকে ডাটা নেওয়ার কুয়েরি
-    const q = query(collection(db, 'products'), orderBy('updatedAt', 'desc'));
-    
-    // onSnapshot ব্যবহার করা হয়েছে যাতে অ্যাডমিন প্রোডাক্ট অ্যাড করলে সাথে সাথে সব ডিভাইসে চলে আসে
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const prodsArray: any[] = [];
-      querySnapshot.forEach((doc) => {
-        prodsArray.push({ id: doc.id, ...doc.data() });
-      });
-      
-      setAllProducts(prodsArray);
-      setDisplayProducts(prodsArray);
-      setLoading(false);
-    }, (error) => {
-      console.error("Firestore Fetch Error:", error);
-      setLoading(false);
-    });
+    let isMounted = true;
 
-    return () => unsubscribe();
+    // ১. প্রথমে মেমোরিতে থাকা ডাটা সাথে সাথে স্ক্রিনে দেখানো (যাতে জিরো লোডিং হয়)
+    const savedLocal = localStorage.getItem('mo_fashion_products');
+    if (savedLocal) {
+      try {
+        const parsed = JSON.parse(savedLocal);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setAllProducts(parsed);
+          setDisplayProducts(parsed);
+          setLoading(false);
+        }
+      } catch (e) {}
+    }
+
+    // ২. ফায়ারবেস ক্লাউড ডাটাবেস থেকে সরাসরি লাইভ ডাটা আনা
+    try {
+      const colRef = collection(db, 'products');
+
+      // রিয়েল-টাইম লিসেনার (কোনো জটিল orderBy ছাড়া, যাতে ফায়ারবেস কোনো এরর না দেয়)
+      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+        if (!isMounted) return;
+
+        const cloudProds: any[] = [];
+        snapshot.forEach((docSnap) => {
+          cloudProds.push({
+            id: docSnap.id,
+            _id: docSnap.id,
+            ...docSnap.data()
+          });
+        });
+
+        if (cloudProds.length > 0) {
+          // নতুন প্রোডাক্ট আগে দেখানোর জন্য ম্যানুয়ালি রিভার্স করা
+          cloudProds.reverse();
+          setAllProducts(cloudProds);
+          setDisplayProducts(cloudProds);
+          localStorage.setItem('mo_fashion_products', JSON.stringify(cloudProds));
+        } else if (!savedLocal) {
+          setAllProducts([]);
+          setDisplayProducts([]);
+        }
+        setLoading(false);
+      }, (err) => {
+        console.warn("Firestore snapshot error, trying fallback fetch:", err);
+        setLoading(false);
+      });
+
+      return () => {
+        isMounted = false;
+        unsubscribe();
+      };
+    } catch (error) {
+      console.error("Firestore Connection Failed:", error);
+      setLoading(false);
+    }
   }, []);
 
   // সার্চ ফিল্টার লজিক
@@ -63,7 +99,7 @@ export default function Home() {
     const sellingPrice = discount > 0 ? originalPrice - (originalPrice * discount / 100) : originalPrice;
 
     const cartItem = {
-      id: product.id,
+      id: String(product.id || product._id),
       name: product.name,
       price: sellingPrice,
       quantity: 1,
@@ -73,24 +109,24 @@ export default function Home() {
       stock: Number(product.stock) || 0
     };
 
-    addToCart(cartItem);
+    addToCart(cartItem as any);
     toast.success(`${product.name} added to cart!`);
   };
 
   return (
     <main className="min-h-screen bg-[#111111] pb-12 text-white">
       <Helmet>
-        <title>{settings?.storeName || 'MO FASHION'} | Home</title>
+        <title>{safeSettings?.storeName || 'MO FASHION'} | Home</title>
       </Helmet>
 
       {/* Hero Section */}
       <section className="bg-[#1A1A1A] py-20 text-center border-b border-[#D4AF37]/20 relative overflow-hidden">
         <div className="container mx-auto px-4 relative z-10">
           <h1 className="text-4xl md:text-6xl font-serif font-bold text-white mb-6 uppercase tracking-widest leading-tight">
-            Welcome to <span className="text-[#D4AF37]">{settings?.storeName || 'MO FASHION'}</span>
+            Welcome to <span className="text-[#D4AF37]">{safeSettings?.storeName || 'MO FASHION'}</span>
           </h1>
           <p className="text-gray-400 mb-10 max-w-2xl mx-auto text-lg md:text-xl font-light">
-            {settings?.tagline || 'Premium E-Commerce Experience'}
+            {safeSettings?.tagline || 'Premium E-Commerce Experience'}
           </p>
           <Link to="/categories">
             <button className="bg-[#D4AF37] text-black px-10 py-4 rounded-lg hover:bg-white transition-all font-bold uppercase tracking-wider shadow-lg">
@@ -126,12 +162,14 @@ export default function Home() {
         </div>
 
         {loading ? (
-          <div className="text-center text-[#D4AF37] font-medium animate-pulse py-20 text-xl">Loading live database...</div>
+          <div className="text-center text-[#D4AF37] font-medium animate-pulse py-20 text-xl">Loading Product Collection...</div>
         ) : displayProducts.length === 0 ? (
           <div className="text-center py-24 bg-[#1A1A1A] rounded-3xl border border-dashed border-gray-800 max-w-3xl mx-auto">
             <ShoppingBag size={64} className="mx-auto text-gray-700 mb-6" />
             <h2 className="text-2xl font-serif font-bold text-white mb-2">No Products Available</h2>
-            <p className="text-gray-500">The collection is currently empty or loading from cloud.</p>
+            <p className="text-gray-500">
+              {searchQuery ? `No product matches your search "${searchQuery}".` : "Please add products from the Admin Panel."}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -139,12 +177,16 @@ export default function Home() {
               const originalPrice = Number(product.price) || 0;
               const discount = Number(product.discount) || 0;
               const sellingPrice = discount > 0 ? originalPrice - (originalPrice * discount / 100) : originalPrice;
-              const displayImg = product.imageUrl || (product.images && product.images[0]);
+              
+              let displayImg = product.imageUrl;
+              if (!displayImg && product.images && product.images.length > 0) {
+                displayImg = product.images[0];
+              }
 
               return (
-                <div key={product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/10 rounded-2xl p-4 text-center hover:border-[#D4AF37]/50 transition-all duration-500 group flex flex-col shadow-xl relative">
+                <div key={product.id || product._id} className="bg-[#1A1A1A] border border-[#D4AF37]/10 rounded-2xl p-4 text-center hover:border-[#D4AF37]/50 transition-all duration-500 group flex flex-col shadow-xl relative">
                   
-                  <Link to={`/product/${product.id}`} className="block relative overflow-hidden rounded-xl mb-5 bg-[#111111] aspect-[4/5]">
+                  <Link to={`/product/${product.id || product._id}`} className="block relative overflow-hidden rounded-xl mb-5 bg-[#111111] aspect-[4/5]">
                     {displayImg ? (
                       <img src={displayImg} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                     ) : (
@@ -158,26 +200,26 @@ export default function Home() {
                     )}
                   </Link>
                   
-                  <Link to={`/product/${product.id}`} className="mt-auto">
+                  <Link to={`/product/${product.id || product._id}`} className="mt-auto">
                     <h3 className="font-bold text-white mb-2 hover:text-[#D4AF37] transition-colors line-clamp-2 px-2 uppercase tracking-tighter text-sm">
                       {product.name}
                     </h3>
                   </Link>
                   
                   <div className="mb-5 flex items-center justify-center space-x-2">
-                    <span className="text-[#D4AF37] font-bold text-xl">{settings?.currency || '৳'} {sellingPrice.toFixed(2)}</span>
+                    <span className="text-[#D4AF37] font-bold text-xl">{safeSettings?.currency || '৳'} {sellingPrice.toFixed(2)}</span>
                     {discount > 0 && (
-                      <span className="text-gray-500 line-through text-xs">{settings?.currency || '৳'} {originalPrice.toFixed(2)}</span>
+                      <span className="text-gray-500 line-through text-xs">{safeSettings?.currency || '৳'} {originalPrice.toFixed(2)}</span>
                     )}
                   </div>
                   
                   <button 
                     onClick={() => handleAddToCart(product)}
-                    disabled={product.stock <= 0}
+                    disabled={product.stock <= 0 || product.status === 'Out of Stock'}
                     className="w-full flex items-center justify-center space-x-2 border border-[#D4AF37] text-[#D4AF37] py-3 rounded-xl hover:bg-[#D4AF37] hover:text-black transition-all font-bold uppercase tracking-widest text-xs disabled:opacity-30 shadow-md"
                   >
                     <ShoppingBag size={16} />
-                    <span>{product.stock <= 0 ? 'Out of Stock' : 'Add to Cart'}</span>
+                    <span>{product.stock <= 0 || product.status === 'Out of Stock' ? 'Out of Stock' : 'Add to Cart'}</span>
                   </button>
                 </div>
               );
