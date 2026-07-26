@@ -6,7 +6,7 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 
 // 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
 import { db } from '../../firebase/config';
-import { doc, onSnapshot, collection } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export default function CategoriesPage() {
   const { settings } = useSettingsStore();
@@ -15,7 +15,7 @@ export default function CategoriesPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে অটো-স্লাইড হওয়ার টাইমার
+  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে পরিবর্তন করার জন্য টাইমার
   const [imageIndex, setImageIndex] = useState(0);
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export default function CategoriesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ১০০% নির্ভুল ক্যাটাগরি পিকচার প্রসেসর (শুধুমাত্র অ্যাডমিনের আপলোড করা ছবিই নিবে)
+  // 🚀 শুধুমাত্র আপনার (অ্যাডমিনের) আপলোড করা আসল ছবি ফিল্টার করার ফাংশন
   const processCategoryData = (catList: any[]) => {
     const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
 
@@ -37,7 +37,7 @@ export default function CategoriesPage() {
 
       let uploadedImages: string[] = [];
 
-      // 🚀 অ্যাডমিন প্যানেল থেকে আপলোড করা আসল ছবিগুলো এক্সট্র্যাক্ট করা
+      // 🚀 শুধুমাত্র অ্যাডমিন প্যানেল থেকে আপলোড করা ছবি ধরা হবে (কোনো ফেইক বা অনাকাঙ্ক্ষিত ছবি থাকবে না)
       if (Array.isArray(cat.images) && cat.images.length > 0) {
         uploadedImages = cat.images.filter((img: string) => img && typeof img === 'string' && img.trim() !== '');
       } else if (cat.imageUrl && typeof cat.imageUrl === 'string' && cat.imageUrl.trim() !== '') {
@@ -49,34 +49,23 @@ export default function CategoriesPage() {
       return {
         ...cat,
         count,
-        uploadedImages // শুধুমাত্র আপনার আপলোড করা ব্যাকগ্রাউন্ড ছবি
+        uploadedImages // শুধুমাত্র আপনার দেওয়া আসল ছবি
       };
     });
   };
 
-  // 🚀 অল ডিভাইস ক্লাউড সিঙ্ক (ফায়ারবেস লাইভ লিসেনার)
+  // 🚀 রিয়েল-টাইম ফায়ারবেস ক্লাউড সিঙ্ক (অল ডিভাইসে সাথে সাথে শো করবে)
   useEffect(() => {
-    // ১. লোকাল মেমোরি থেকে সাথে সাথে লোড করা
+    // ১. লোকাল মেমোরি থেকে ডাটা লোড
     const savedLocalCats = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
     if (savedLocalCats.length > 0) {
       setCategories(processCategoryData(savedLocalCats));
     }
 
-    // ২. ফায়ারবেস ক্লাউডের store_categories ডকুমেন্ট থেকে অল ডিভাইসে লাইভ সিঙ্ক করা
+    // ২. ফায়ারবেস ক্লাউড থেকে সরাসরি আসল ছবি লোড
     try {
-      const globalCatRef = doc(db, 'settings', 'store_categories');
-      const unsubscribeDoc = onSnapshot(globalCatRef, (docSnap) => {
-        if (docSnap.exists() && docSnap.data().categories) {
-          const cloudArray = docSnap.data().categories;
-          const formatted = processCategoryData(cloudArray);
-          setCategories(formatted);
-          localStorage.setItem('mo_fashion_categories', JSON.stringify(cloudArray));
-        }
-      });
-
-      // ৩. ক্লাউডের 'categories' কালেকশন লিসেনার (ব্যাকআপ)
       const colRef = collection(db, 'categories');
-      const unsubscribeCol = onSnapshot(colRef, (snapshot) => {
+      const unsubscribe = onSnapshot(colRef, (snapshot) => {
         const cloudCats: any[] = [];
         snapshot.forEach((docSnap) => {
           cloudCats.push({ id: docSnap.id, ...docSnap.data() });
@@ -89,10 +78,7 @@ export default function CategoriesPage() {
         }
       });
 
-      return () => {
-        unsubscribeDoc();
-        unsubscribeCol();
-      };
+      return () => unsubscribe();
     } catch (e) {
       console.warn("Firestore Category Sync Error:", e);
     }
@@ -156,7 +142,7 @@ export default function CategoriesPage() {
                   {/* Background Overlay */}
                   <div className="absolute inset-0 bg-black/60 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
                   
-                  {/* 🚀 ১ নম্বর ছবির মতো আপনার আপলোড করা আসল ছবিগুলোই এখানে স্লাইড হবে */}
+                  {/* 🚀 শুধুমাত্র আপনার আপলোড করা আসল ছবিগুলোই স্লাইড হবে */}
                   {category.uploadedImages && category.uploadedImages.length > 0 ? (
                     category.uploadedImages.map((img: string, idx: number) => (
                       <img 
@@ -169,9 +155,10 @@ export default function CategoriesPage() {
                       />
                     ))
                   ) : (
-                    <div className="absolute inset-0 bg-[#1A1A1A] flex flex-col items-center justify-center text-gray-600">
+                    /* ছবি আপলোড না করা থাকলে কোনো ফেইক ছবি দেখাবে না, শুধু প্রিমিয়াম ডার্ক ব্যাকগ্রাউন্ড থাকবে */
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#1A1A1A] to-[#0D0D0D] flex flex-col items-center justify-center text-gray-600">
                       <Layers size={48} className="mb-2 text-[#D4AF37]/30" />
-                      <span className="text-xs uppercase tracking-widest text-gray-500">No Custom Image</span>
+                      <span className="text-xs uppercase tracking-widest text-gray-500 font-bold">No Image Uploaded</span>
                     </div>
                   )}
                   
