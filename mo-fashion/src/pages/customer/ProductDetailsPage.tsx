@@ -47,7 +47,7 @@ export default function ProductDetailsPage() {
 
     const fetchProductDetails = async () => {
       try {
-        const res = await fetch(`https://mo-fashion-backend.onrender.com/api/products/${id}`);
+        const res = await fetch(`https://mo-fashion-api-mehedi.onrender.com/api/products/${id}`);
         const data = await res.json();
 
         if (res.ok && !data.message) {

@@ -63,7 +63,7 @@ export default function RecycleBin() {
 
     try {
       // ব্যাকএন্ড API তে প্রোডাক্টটি আবার সেভ করা
-      const response = await fetch('https://mo-fashion-backend.onrender.com/api/products', {
+      const response = await fetch('https://mo-fashion-api-mehedi.onrender.com/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(restoredProductData)
