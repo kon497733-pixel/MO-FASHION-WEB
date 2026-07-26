@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Layers, ShoppingBag, Search } from 'lucide-react';
+import { ArrowRight, Layers, ShoppingBag, Search, RefreshCw } from 'lucide-react';
 import { useSettingsStore } from '../../store/useSettingsStore';
 
 // 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
@@ -13,7 +13,9 @@ export default function CategoriesPage() {
   const safeSettings = settings as any;
 
   const [categories, setCategories] = useState<any[]>([]);
+  const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
 
   // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে পরিবর্তন করার জন্য টাইমার
   const [imageIndex, setImageIndex] = useState(0);
@@ -25,68 +27,59 @@ export default function CategoriesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 শুধুমাত্র আপনার (অ্যাডমিনের) আপলোড করা আসল ছবি ফিল্টার করার ফাংশন (কোনো ডামি বা অন্য প্রোডাক্টের ছবি নেবে না)
-  const processCategoryData = (catList: any[]) => {
-    const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
-
-    return catList.map((cat: any) => {
+  // 🚀 ১. ক্লাউড থেকে প্রোডাক্ট এবং ক্যাটাগরি ডাটা প্রসেস করার ফাংশন
+  const processAllData = (cloudCats: any[], cloudProds: any[]) => {
+    return cloudCats.map((cat: any) => {
       const catNameLower = (cat.name || '').trim().toLowerCase();
 
-      // প্রোডাক্ট সংখ্যা হিসাব করা
-      const count = savedProducts.filter(
+      // রিয়েল-টাইম প্রোডাক্ট কাউন্ট (সরাসরি ক্লাউড ডাটা থেকে)
+      const count = cloudProds.filter(
         (p: any) => p.category?.trim().toLowerCase() === catNameLower && p.status !== 'Out of Stock'
       ).length;
 
-      // 🚀 শুধুমাত্র আপনার আপলোড করা ছবিই নেওয়া হবে
       let uploadedImages: string[] = [];
-
       if (Array.isArray(cat.images) && cat.images.length > 0) {
         uploadedImages = cat.images.filter((img: string) => img && typeof img === 'string' && img.trim() !== '');
-      } else if (cat.imageUrl && cat.imageUrl.trim() !== '') {
+      } else if (cat.imageUrl && typeof cat.imageUrl === 'string' && cat.imageUrl.trim() !== '') {
         uploadedImages = [cat.imageUrl];
-      } else if (cat.image && typeof cat.image === 'string' && cat.image.trim() !== '') {
-        uploadedImages = [cat.image];
       }
 
       return {
         ...cat,
         count,
-        uploadedImages // শুধুমাত্র আপনার দেওয়া আসল ছবি
+        uploadedImages
       };
     });
   };
 
-  // 🚀 রিয়েল-টাইম ফায়ারবেস ক্লাউড সিঙ্ক (অল ডিভাইসে সাথে সাথে শো করবে)
+  // 🚀 ২. রিয়েল-টাইম ক্লাউড সিঙ্ক (সব ডিভাইসের জন্য)
   useEffect(() => {
-    // ১. লোকাল মেমোরি থেকে সাথে সাথে ডাটা লোড
-    const savedLocalCats = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
-    if (savedLocalCats.length > 0) {
-      setCategories(processCategoryData(savedLocalCats));
-    }
+    setLoading(true);
 
-    // ২. ফায়ারবেস ক্লাউড থেকে সরাসরি আসল ছবি লোড
-    try {
-      const colRef = collection(db, 'categories');
-      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+    // ফায়ারবেস থেকে প্রোডাক্ট লিসেনার
+    const prodRef = collection(db, 'products');
+    const unsubProds = onSnapshot(prodRef, (prodSnap) => {
+      const cloudProds: any[] = [];
+      prodSnap.forEach(doc => cloudProds.push({ id: doc.id, ...doc.data() }));
+      setDbProducts(cloudProds);
+      
+      // ফায়ারবেস থেকে ক্যাটাগরি লিসেনার
+      const catRef = collection(db, 'categories');
+      const unsubCats = onSnapshot(catRef, (catSnap) => {
         const cloudCats: any[] = [];
-        snapshot.forEach((docSnap) => {
-          cloudCats.push({ id: docSnap.id, ...docSnap.data() });
-        });
+        catSnap.forEach(doc => cloudCats.push({ id: doc.id, ...doc.data() }));
 
-        if (cloudCats.length > 0) {
-          const formatted = processCategoryData(cloudCats);
-          setCategories(formatted);
-          localStorage.setItem('mo_fashion_categories', JSON.stringify(cloudCats));
-        }
+        const finalData = processAllData(cloudCats, cloudProds);
+        setCategories(finalData);
+        setLoading(false);
       });
 
-      return () => unsubscribe();
-    } catch (e) {
-      console.warn("Firestore Category Sync Error:", e);
-    }
+      return () => unsubCats();
+    });
+
+    return () => unsubProds();
   }, []);
 
-  // সার্চ ফিল্টার
   const filteredCategories = categories.filter(cat =>
     cat.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -99,14 +92,13 @@ export default function CategoriesPage() {
 
       <div className="container mx-auto px-4">
         
-        {/* Header */}
         <div className="text-center mb-10 mt-8">
           <h1 className="text-4xl md:text-5xl font-serif font-bold text-[#D4AF37] mb-4 tracking-wider uppercase flex items-center justify-center">
             <Layers className="mr-4" size={40} />
             Our Collections
           </h1>
           <p className="text-gray-400 max-w-2xl mx-auto text-lg">
-            Browse through our wide range of premium fashion categories curated specially for you.
+            Explore our premium fashion categories synced live from the cloud.
           </p>
         </div>
 
@@ -117,23 +109,23 @@ export default function CategoriesPage() {
           </div>
           <input 
             type="text" 
-            placeholder="Search categories... (e.g., Men, Winter)" 
+            placeholder="Search categories..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#1A1A1A] border border-gray-800 rounded-full pl-14 pr-6 py-4 text-white focus:outline-none focus:border-[#D4AF37] transition-colors shadow-lg"
           />
         </div>
 
-        {filteredCategories.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-20 text-[#D4AF37] animate-pulse flex flex-col items-center">
+            <RefreshCw size={48} className="animate-spin mb-4" />
+            <span className="text-xl font-bold uppercase tracking-widest">Connecting to Cloud...</span>
+          </div>
+        ) : filteredCategories.length === 0 ? (
           <div className="text-center py-20 bg-[#1A1A1A] rounded-2xl border border-dashed border-gray-800 max-w-2xl mx-auto shadow-2xl">
             <ShoppingBag size={64} className="mx-auto text-gray-600 mb-6" />
             <h2 className="text-2xl font-serif font-bold text-white mb-4">No Collections Found</h2>
-            <p className="text-gray-400 mb-8">
-              {searchQuery ? `We couldn't find any category matching "${searchQuery}".` : "Currently, there are no categories available."}
-            </p>
-            <Link to="/" className="inline-block bg-[#D4AF37] text-black px-8 py-3 rounded-lg font-bold uppercase tracking-wider hover:bg-white transition-colors">
-              Return to Home
-            </Link>
+            <p className="text-gray-400 mb-8">Please add categories from the Admin Panel to see them here live.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-10">
@@ -141,10 +133,9 @@ export default function CategoriesPage() {
               <Link to={`/category/${encodeURIComponent(category.name)}`} key={index} className="group">
                 <div className="relative h-[400px] rounded-2xl overflow-hidden border border-[#D4AF37]/20 hover:border-[#D4AF37] transition-colors duration-500 shadow-lg bg-[#151515]">
                   
-                  {/* Background Overlay */}
                   <div className="absolute inset-0 bg-black/60 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
                   
-                  {/* 🚀 শুধুমাত্র আপনার আপলোড করা আসল ছবিগুলোই স্লাইড হবে (কোনো ডামি বা ফেইক ছবি কখনোই আসবে না) */}
+                  {/* 🚀 আপনার আপলোড করা আসল ছবিগুলো এখানে স্লাইড হবে */}
                   {category.uploadedImages && category.uploadedImages.length > 0 ? (
                     category.uploadedImages.map((img: string, idx: number) => (
                       <img 
@@ -157,10 +148,9 @@ export default function CategoriesPage() {
                       />
                     ))
                   ) : (
-                    /* ছবি আপলোড না করা থাকলে কোনো ফেইক ছবি দেখাবে না, শুধু প্রিমিয়াম ডার্ক ব্যাকগ্রাউন্ড থাকবে */
-                    <div className="absolute inset-0 bg-gradient-to-br from-[#1A1A1A] to-[#0D0D0D] flex flex-col items-center justify-center text-gray-600">
+                    <div className="absolute inset-0 bg-[#1A1A1A] flex flex-col items-center justify-center text-gray-600">
                       <Layers size={48} className="mb-2 text-[#D4AF37]/30" />
-                      <span className="text-xs uppercase tracking-widest text-gray-500 font-bold">No Image Uploaded</span>
+                      <span className="text-xs uppercase tracking-widest text-gray-500 font-bold px-4 text-center">Please Upload Background from Admin Panel</span>
                     </div>
                   )}
                   
@@ -170,8 +160,7 @@ export default function CategoriesPage() {
                       {category.name}
                     </h2>
                     
-                    {/* Items Counter Badge */}
-                    <span className="inline-block px-5 py-1.5 bg-black/50 backdrop-blur-md border border-[#D4AF37]/50 rounded-full text-[#D4AF37] text-sm font-bold tracking-wider mb-6 group-hover:bg-[#D4AF37] group-hover:text-black transition-colors">
+                    <span className="inline-block px-5 py-1.5 bg-black/60 backdrop-blur-md border border-[#D4AF37]/50 rounded-full text-[#D4AF37] text-sm font-bold tracking-wider mb-6 group-hover:bg-[#D4AF37] group-hover:text-black transition-colors">
                       {category.count} {category.count === 1 ? 'Item' : 'Items'}
                     </span>
                     
