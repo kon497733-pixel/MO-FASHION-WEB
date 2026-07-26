@@ -23,7 +23,6 @@ export default function Home() {
   // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে অটো-স্লাইড হওয়ার জন্য স্টেট
   const [imageIndex, setImageIndex] = useState(0);
 
-  // ২ সেকেন্ড পর পর ছবির ইনডেক্স চেঞ্জ হবে (Auto Slider)
   useEffect(() => {
     const interval = setInterval(() => {
       setImageIndex((prev) => prev + 1);
@@ -31,7 +30,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ১. সরাসরি লাইভ ক্লাউড ডাটাবেস থেকে সমস্ত প্রোডাক্ট ফেচ করা
+  // ১. সরাসরি লাইভ ক্লাউড ডাটাবেস থেকে সমস্ত প্রোডাক্ট ফেচ করা
   const fetchLiveProducts = async () => {
     try {
       setLoading(true);
@@ -139,10 +138,18 @@ export default function Home() {
       {/* New Arrivals Section */}
       <section className="py-10 container mx-auto px-4">
         <div className="text-center mb-10">
-          <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#D4AF37] tracking-wider mb-4 uppercase">
+          <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#D4AF37] tracking-wider mb-2 uppercase">
             NEW ARRIVALS
           </h2>
-          <div className="w-24 h-1 bg-[#D4AF37] mx-auto opacity-50 rounded-full"></div>
+          
+          {/* 🚀 মোট প্রোডাক্টের সংখ্যা কাউন্টার */}
+          {!loading && displayProducts.length > 0 && (
+            <p className="text-xs text-gray-400 font-medium tracking-widest uppercase mt-2">
+              Showing <span className="text-[#D4AF37] font-bold">{displayProducts.length}</span> {displayProducts.length === 1 ? 'Product' : 'Products'} Available
+            </p>
+          )}
+
+          <div className="w-24 h-1 bg-[#D4AF37] mx-auto opacity-50 rounded-full mt-4"></div>
         </div>
 
         {loading ? (
@@ -172,7 +179,7 @@ export default function Home() {
               return (
                 <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/10 rounded-2xl p-4 text-center hover:border-[#D4AF37]/50 transition-all duration-500 group flex flex-col shadow-xl relative">
                   
-                  {/* 🚀 Product Image Box with 2-Sec Auto-Slider */}
+                  {/* Product Image Box with 2-Sec Auto-Slider */}
                   <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-xl mb-5 bg-[#111111] aspect-[4/5]">
                     {productImages.length > 0 ? (
                       productImages.map((img: string, idx: number) => (
@@ -197,14 +204,17 @@ export default function Home() {
                     )}
 
                     {/* 🚀 Stock Status Badges (Top Right) */}
-                    {product.stock > 0 && product.stock <= 5 && (
-                      <span className="absolute top-3 right-3 bg-yellow-500/90 text-black text-[10px] font-bold px-2 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
+                    {product.stock <= 0 || product.status === 'Out of Stock' ? (
+                      <span className="absolute top-3 right-3 bg-red-600/90 text-white text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
+                        Sold Out
+                      </span>
+                    ) : product.stock <= 5 ? (
+                      <span className="absolute top-3 right-3 bg-yellow-500/90 text-black text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
                         Few Left ({product.stock})
                       </span>
-                    )}
-                    {(product.stock <= 0 || product.status === 'Out of Stock') && (
-                      <span className="absolute top-3 right-3 bg-red-600/90 text-white text-[10px] font-bold px-2 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
-                        Sold Out
+                    ) : (
+                      <span className="absolute top-3 right-3 bg-green-600/80 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
+                        In Stock
                       </span>
                     )}
                   </Link>
