@@ -5,14 +5,16 @@ require('dotenv').config();
 
 // রাউট ফাইলগুলো ইমপোর্ট করা
 const productRoutes = require('./routes/productRoutes');
-const orderRoutes = require('./routes/orderRoutes'); // নতুন অর্ডারের রাউট ইমপোর্ট করা হলো
+const orderRoutes = require('./routes/orderRoutes');
 
-// অ্যাপ ইনিশিয়ালাইজ করা
 const app = express();
 
-// মিডলওয়্যার (Middleware) - ফ্রন্টএন্ডের সাথে ডাটা আদান-প্রদানের জন্য
+// 🚀 ১. CORS পলিসি আপডেট (যাতে Vercel থেকে ডাটা পাঠাতে বাধা না দেয়)
 app.use(cors());
-app.use(express.json());
+
+// 🚀 ২. ডাটা লিমিট বাড়ানো (একাধিক বড় ছবি সেভ করার জন্য এটি খুবই জরুরি)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // MongoDB ডাটাবেস কানেকশন সেটআপ
 mongoose.connect(process.env.MONGO_URI)
@@ -23,11 +25,11 @@ mongoose.connect(process.env.MONGO_URI)
     console.error('❌ MongoDB Connection Error:', error);
   });
 
-// API রাউটস (Routes) যুক্ত করা
+// API রাউটস যুক্ত করা
 app.use('/api/products', productRoutes);
-app.use('/api/orders', orderRoutes); // নতুন অর্ডারের API লিংক যুক্ত করা হলো
+app.use('/api/orders', orderRoutes);
 
-// বেসিক রাউট (সার্ভার ঠিকমতো কাজ করছে কি না তা চেক করার জন্য)
+// বেসিক রাউট
 app.get('/', (req, res) => {
   res.send('MO FASHION Backend Server is Running Perfectly! 🎉');
 });
@@ -35,7 +37,6 @@ app.get('/', (req, res) => {
 // সার্ভার পোর্ট সেটআপ
 const PORT = process.env.PORT || 5000;
 
-// সার্ভার চালু করা
 app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  console.log(`🚀 Server is running on port ${PORT}`);
 });
