@@ -6,15 +6,7 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 
 // 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
 import { db } from '../../firebase/config';
-import { collection, onSnapshot } from 'firebase/firestore';
-
-// 🚀 হাই-ডেফিনিশন ফ্যাশন কভার পিকচারসমূহ (যাতে কোনো ডিভাইস কখনো খালি না থাকে)
-const DEFAULT_CATEGORY_COVERS: Record<string, string> = {
-  "men": "https://images.unsplash.com/photo-1617137968427-85924c800a22?q=80&w=800&auto=format&fit=crop",
-  "women": "https://images.unsplash.com/photo-1539008835657-9e8e9680c956?q=80&w=800&auto=format&fit=crop",
-  "accessories": "https://images.unsplash.com/photo-1611591437281-460bfbe1220a?q=80&w=800&auto=format&fit=crop",
-  "fallback": "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=800&auto=format&fit=crop"
-};
+import { doc, onSnapshot, collection } from 'firebase/firestore';
 
 export default function CategoriesPage() {
   const { settings } = useSettingsStore();
@@ -33,80 +25,74 @@ export default function CategoriesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ১০০% বুলেটপ্রুফ ক্যাটাগরি ইমেজ প্রসেসর
-  const processCategories = (catList: any[]) => {
+  // 🚀 ১০০% নির্ভুল ক্যাটাগরি পিকচার প্রসেসর (শুধুমাত্র অ্যাডমিনের আপলোড করা ছবিই নিবে)
+  const processCategoryData = (catList: any[]) => {
     const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
 
     return catList.map((cat: any) => {
-      // ক্যাটাগরির প্রোডাক্ট সংখ্যা হিসাব করা
+      // ওই ক্যাটাগরির প্রোডাক্ট সংখ্যা হিসাব করা
       const count = savedProducts.filter(
         (p: any) => p.category?.trim().toLowerCase() === cat.name?.trim().toLowerCase() && p.status !== 'Out of Stock'
       ).length;
 
-      let finalImages: string[] = [];
+      let uploadedImages: string[] = [];
 
-      // ১. অ্যাডমিন প্যানেল থেকে আপলোড করা ছবিগুলো চেক করা (images, imageUrl, image সব কি চেক করবে)
+      // 🚀 অ্যাডমিন প্যানেল থেকে আপলোড করা আসল ছবিগুলো এক্সট্র্যাক্ট করা
       if (Array.isArray(cat.images) && cat.images.length > 0) {
-        finalImages = cat.images.filter((img: string) => img && typeof img === 'string' && img.trim() !== '');
+        uploadedImages = cat.images.filter((img: string) => img && typeof img === 'string' && img.trim() !== '');
       } else if (cat.imageUrl && typeof cat.imageUrl === 'string' && cat.imageUrl.trim() !== '') {
-        finalImages = [cat.imageUrl];
+        uploadedImages = [cat.imageUrl];
       } else if (cat.image && typeof cat.image === 'string' && cat.image.trim() !== '') {
-        finalImages = [cat.image];
-      }
-
-      // ২. যদি অ্যাডমিন ছবি আপলোড না করে থাকে, তবে নাম অনুযায়ী এইচডি ব্যাকগ্রাউন্ড কভার বসবে
-      if (finalImages.length === 0) {
-        const nameLower = (cat.name || '').toLowerCase();
-        if (nameLower.includes('men')) {
-          finalImages = [DEFAULT_CATEGORY_COVERS.men];
-        } else if (nameLower.includes('women')) {
-          finalImages = [DEFAULT_CATEGORY_COVERS.women];
-        } else if (nameLower.includes('access')) {
-          finalImages = [DEFAULT_CATEGORY_COVERS.accessories];
-        } else {
-          finalImages = [DEFAULT_CATEGORY_COVERS.fallback];
-        }
+        uploadedImages = [cat.image];
       }
 
       return {
         ...cat,
         count,
-        finalImages
+        uploadedImages // শুধুমাত্র আপনার আপলোড করা ব্যাকগ্রাউন্ড ছবি
       };
     });
   };
 
-  // 🚀 রিয়েল-টাইম ফায়ারবেস ক্লাউড সিঙ্ক
+  // 🚀 অল ডিভাইস ক্লাউড সিঙ্ক (ফায়ারবেস লাইভ লিসেনার)
   useEffect(() => {
-    // ১. লোকাল মেমোরি থেকে সাথে সাথে ডাটা লোড
+    // ১. লোকাল মেমোরি থেকে সাথে সাথে লোড করা
     const savedLocalCats = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
     if (savedLocalCats.length > 0) {
-      setCategories(processCategories(savedLocalCats));
-    } else {
-      setCategories(processCategories([
-        { id: '1', name: "Men's Collection" },
-        { id: '2', name: "Women's Collection" },
-        { id: '3', name: "Accessories" }
-      ]));
+      setCategories(processCategoryData(savedLocalCats));
     }
 
-    // ২. ক্লাউড ফায়ারবেস থেকে লাইভ সিঙ্ক
+    // ২. ফায়ারবেস ক্লাউডের store_categories ডকুমেন্ট থেকে অল ডিভাইসে লাইভ সিঙ্ক করা
     try {
+      const globalCatRef = doc(db, 'settings', 'store_categories');
+      const unsubscribeDoc = onSnapshot(globalCatRef, (docSnap) => {
+        if (docSnap.exists() && docSnap.data().categories) {
+          const cloudArray = docSnap.data().categories;
+          const formatted = processCategoryData(cloudArray);
+          setCategories(formatted);
+          localStorage.setItem('mo_fashion_categories', JSON.stringify(cloudArray));
+        }
+      });
+
+      // ৩. ক্লাউডের 'categories' কালেকশন লিসেনার (ব্যাকআপ)
       const colRef = collection(db, 'categories');
-      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+      const unsubscribeCol = onSnapshot(colRef, (snapshot) => {
         const cloudCats: any[] = [];
         snapshot.forEach((docSnap) => {
           cloudCats.push({ id: docSnap.id, ...docSnap.data() });
         });
 
         if (cloudCats.length > 0) {
-          const processed = processCategories(cloudCats);
-          setCategories(processed);
+          const formatted = processCategoryData(cloudCats);
+          setCategories(formatted);
           localStorage.setItem('mo_fashion_categories', JSON.stringify(cloudCats));
         }
       });
 
-      return () => unsubscribe();
+      return () => {
+        unsubscribeDoc();
+        unsubscribeCol();
+      };
     } catch (e) {
       console.warn("Firestore Category Sync Error:", e);
     }
@@ -168,19 +154,26 @@ export default function CategoriesPage() {
                 <div className="relative h-[400px] rounded-2xl overflow-hidden border border-[#D4AF37]/20 hover:border-[#D4AF37] transition-colors duration-500 shadow-lg bg-[#151515]">
                   
                   {/* Background Overlay */}
-                  <div className="absolute inset-0 bg-black/55 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
+                  <div className="absolute inset-0 bg-black/60 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
                   
-                  {/* 🚀 ২ সেকেন্ডের ব্যাকগ্রাউন্ড অটো-স্লাইডার (যা কখনো ফাঁকা থাকবে না) */}
-                  {category.finalImages && category.finalImages.map((img: string, idx: number) => (
-                    <img 
-                      key={idx}
-                      src={img} 
-                      alt={category.name} 
-                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
-                        idx === (imageIndex % category.finalImages.length) ? 'opacity-100 group-hover:scale-110 transition-transform duration-700' : 'opacity-0'
-                      }`}
-                    />
-                  ))}
+                  {/* 🚀 ১ নম্বর ছবির মতো আপনার আপলোড করা আসল ছবিগুলোই এখানে স্লাইড হবে */}
+                  {category.uploadedImages && category.uploadedImages.length > 0 ? (
+                    category.uploadedImages.map((img: string, idx: number) => (
+                      <img 
+                        key={idx}
+                        src={img} 
+                        alt={category.name} 
+                        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
+                          idx === (imageIndex % category.uploadedImages.length) ? 'opacity-100 group-hover:scale-110 transition-transform duration-700' : 'opacity-0'
+                        }`}
+                      />
+                    ))
+                  ) : (
+                    <div className="absolute inset-0 bg-[#1A1A1A] flex flex-col items-center justify-center text-gray-600">
+                      <Layers size={48} className="mb-2 text-[#D4AF37]/30" />
+                      <span className="text-xs uppercase tracking-widest text-gray-500">No Custom Image</span>
+                    </div>
+                  )}
                   
                   {/* Category Content */}
                   <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center p-6">
