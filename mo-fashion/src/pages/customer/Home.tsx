@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Search, Tag, RefreshCw } from 'lucide-react';
+import { ShoppingBag, Search, Tag, RefreshCw, Box } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -30,7 +30,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // ১. সরাসরি লাইভ ক্লাউড ডাটাবেস থেকে সমস্ত প্রোডাক্ট ফেচ করা
+  // 🚀 ১. সরাসরি লাইভ ক্লাউড ডাটাবেস থেকে সমস্ত প্রোডাক্ট ফেচ করা
   const fetchLiveProducts = async () => {
     try {
       setLoading(true);
@@ -77,9 +77,15 @@ export default function Home() {
   }, [searchQuery, allProducts]);
 
   const handleAddToCart = (product: any) => {
-    const originalPrice = Number(product.price) || 0;
-    const discount = Number(product.discount) || 0;
-    const sellingPrice = discount > 0 ? originalPrice - (originalPrice * discount / 100) : originalPrice;
+    const origPrice = Number(product.price) || 0;
+    let discPercent = Number(product.discount) || 0;
+    let sellingPrice = origPrice;
+
+    if (discPercent > 0) {
+      sellingPrice = origPrice - (origPrice * discPercent / 100);
+    } else if (product.discountPrice && Number(product.discountPrice) < origPrice) {
+      sellingPrice = Number(product.discountPrice);
+    }
 
     const cartItem = {
       id: String(product._id || product.id),
@@ -142,7 +148,7 @@ export default function Home() {
             NEW ARRIVALS
           </h2>
           
-          {/* 🚀 মোট প্রোডাক্টের সংখ্যা কাউন্টার */}
+          {/* 🚀 মোট প্রসেসড প্রোডাক্টের সংখ্যা */}
           {!loading && displayProducts.length > 0 && (
             <p className="text-xs text-gray-400 font-medium tracking-widest uppercase mt-2">
               Showing <span className="text-[#D4AF37] font-bold">{displayProducts.length}</span> {displayProducts.length === 1 ? 'Product' : 'Products'} Available
@@ -168,9 +174,18 @@ export default function Home() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {displayProducts.map((product) => {
-              const originalPrice = Number(product.price) || 0;
-              const discount = Number(product.discount) || 0;
-              const sellingPrice = discount > 0 ? originalPrice - (originalPrice * discount / 100) : originalPrice;
+              const origPrice = Number(product.price) || 0;
+              let discPercent = Number(product.discount) || 0;
+              let sellingPrice = origPrice;
+
+              if (discPercent > 0) {
+                sellingPrice = origPrice - (origPrice * discPercent / 100);
+              } else if (product.discountPrice && Number(product.discountPrice) < origPrice) {
+                sellingPrice = Number(product.discountPrice);
+                discPercent = Math.round(((origPrice - sellingPrice) / origPrice) * 100);
+              }
+
+              const stockVal = Number(product.stock) || 0;
               
               const productImages = (product.images && product.images.length > 0 && !product.images[0].includes('No+Image')) 
                 ? product.images 
@@ -180,7 +195,7 @@ export default function Home() {
                 <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/10 rounded-2xl p-4 text-center hover:border-[#D4AF37]/50 transition-all duration-500 group flex flex-col shadow-xl relative">
                   
                   {/* Product Image Box with 2-Sec Auto-Slider */}
-                  <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-xl mb-5 bg-[#111111] aspect-[4/5]">
+                  <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-xl mb-4 bg-[#111111] aspect-[4/5]">
                     {productImages.length > 0 ? (
                       productImages.map((img: string, idx: number) => (
                         <img 
@@ -197,48 +212,56 @@ export default function Home() {
                     )}
 
                     {/* 🚀 Daraz Style Discount Badge (Top Left) */}
-                    {discount > 0 && (
+                    {discPercent > 0 && (
                       <div className="absolute top-3 left-3 bg-gradient-to-r from-orange-500 to-red-600 text-white text-[10px] font-extrabold px-2.5 py-1 rounded shadow-lg z-10 flex items-center">
-                        <Tag size={10} className="mr-1" /> -{discount}% OFF
+                        <Tag size={10} className="mr-1" /> -{discPercent}% OFF
                       </div>
                     )}
 
                     {/* 🚀 Stock Status Badges (Top Right) */}
-                    {product.stock <= 0 || product.status === 'Out of Stock' ? (
+                    {stockVal <= 0 || product.status === 'Out of Stock' ? (
                       <span className="absolute top-3 right-3 bg-red-600/90 text-white text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
                         Sold Out
                       </span>
-                    ) : product.stock <= 5 ? (
+                    ) : stockVal <= 5 ? (
                       <span className="absolute top-3 right-3 bg-yellow-500/90 text-black text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
-                        Few Left ({product.stock})
+                        Few Left ({stockVal})
                       </span>
                     ) : (
-                      <span className="absolute top-3 right-3 bg-green-600/80 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
-                        In Stock
+                      <span className="absolute top-3 right-3 bg-green-600/90 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
+                        In Stock ({stockVal})
                       </span>
                     )}
                   </Link>
                   
-                  <Link to={`/product/${product._id || product.id}`} className="mt-auto">
-                    <h3 className="font-bold text-white mb-2 hover:text-[#D4AF37] transition-colors line-clamp-2 px-2 uppercase tracking-tighter text-sm">
+                  {/* Product Title */}
+                  <Link to={`/product/${product._id || product.id}`}>
+                    <h3 className="font-bold text-white mb-1 hover:text-[#D4AF37] transition-colors line-clamp-1 px-2 uppercase tracking-tighter text-sm">
                       {product.name}
                     </h3>
                   </Link>
+
+                  {/* 🚀 Remaining Items Text */}
+                  <p className="text-[11px] text-gray-400 mb-3">
+                    {stockVal > 0 ? `${stockVal} items remaining` : <span className="text-red-400 font-bold">Currently unavailable</span>}
+                  </p>
                   
-                  <div className="mb-5 flex items-center justify-center space-x-2">
+                  {/* Price Section */}
+                  <div className="mb-5 flex items-center justify-center space-x-2 mt-auto">
                     <span className="text-[#D4AF37] font-bold text-xl">{safeSettings?.currency || '৳'} {sellingPrice.toFixed(2)}</span>
-                    {discount > 0 && (
-                      <span className="text-gray-500 line-through text-xs">{safeSettings?.currency || '৳'} {originalPrice.toFixed(2)}</span>
+                    {discPercent > 0 && (
+                      <span className="text-gray-500 line-through text-xs">{safeSettings?.currency || '৳'} {origPrice.toFixed(2)}</span>
                     )}
                   </div>
                   
+                  {/* Add to Cart Button */}
                   <button 
                     onClick={() => handleAddToCart(product)}
-                    disabled={product.stock <= 0 || product.status === 'Out of Stock'}
+                    disabled={stockVal <= 0 || product.status === 'Out of Stock'}
                     className="w-full flex items-center justify-center space-x-2 border border-[#D4AF37] text-[#D4AF37] py-3 rounded-xl hover:bg-[#D4AF37] hover:text-black transition-all font-bold uppercase tracking-widest text-xs disabled:opacity-30 shadow-md"
                   >
                     <ShoppingBag size={16} />
-                    <span>{product.stock <= 0 || product.status === 'Out of Stock' ? 'Out of Stock' : 'Add to Cart'}</span>
+                    <span>{stockVal <= 0 || product.status === 'Out of Stock' ? 'Out of Stock' : 'Add to Cart'}</span>
                   </button>
                 </div>
               );
