@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Image as ImageIcon, Search, Tag, RefreshCw } from 'lucide-react';
+import { ShoppingBag, Search, Tag, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -12,7 +12,7 @@ export default function Home() {
   const safeSettings = settings as any;
   const addToCart = useCartStore((state) => state.addToCart);
 
-  // 🚀 আপনার অ্যাডমিন প্যানেলের ঠিক সেই একই লাইভ মঙ্গোডিবি এপিআই লিঙ্ক
+  // 🚀 আপনার লাইভ মঙ্গোডিবি ক্লাউড এপিআই লিঙ্ক
   const API_URL = 'https://mo-fashion-api-mehedi.onrender.com/api/products';
 
   const [allProducts, setAllProducts] = useState<any[]>([]);
@@ -20,7 +20,18 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 🚀 ১. সরাসরি রেন্ডার ক্লাউড ব্যাকএন্ড (MongoDB) থেকে প্রোডাক্ট ফেচ করা
+  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে অটো-স্লাইড হওয়ার জন্য স্টেট
+  const [imageIndex, setImageIndex] = useState(0);
+
+  // ২ সেকেন্ড পর পর ছবির ইনডেক্স চেঞ্জ হবে (Auto Slider)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setImageIndex((prev) => prev + 1);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 🚀 ১. সরাসরি লাইভ ক্লাউড ডাটাবেস থেকে সমস্ত প্রোডাক্ট ফেচ করা
   const fetchLiveProducts = async () => {
     try {
       setLoading(true);
@@ -28,7 +39,6 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          // নতুন প্রোডাক্ট সবার আগে দেখানোর জন্য রিভার্স করা
           const latestFirst = [...data].reverse();
           setAllProducts(latestFirst);
           setDisplayProducts(latestFirst);
@@ -155,25 +165,47 @@ export default function Home() {
               const discount = Number(product.discount) || 0;
               const sellingPrice = discount > 0 ? originalPrice - (originalPrice * discount / 100) : originalPrice;
               
-              let displayImg = product.imageUrl;
-              if (!displayImg && product.images && product.images.length > 0) {
-                displayImg = product.images[0];
-              }
+              const productImages = (product.images && product.images.length > 0 && !product.images[0].includes('No+Image')) 
+                ? product.images 
+                : (product.imageUrl ? [product.imageUrl] : []);
 
               return (
                 <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/10 rounded-2xl p-4 text-center hover:border-[#D4AF37]/50 transition-all duration-500 group flex flex-col shadow-xl relative">
                   
+                  {/* 🚀 Product Image Box with 2-Sec Auto-Slider */}
                   <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-xl mb-5 bg-[#111111] aspect-[4/5]">
-                    {displayImg ? (
-                      <img src={displayImg} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                    {productImages.length > 0 ? (
+                      productImages.map((img: string, idx: number) => (
+                        <img 
+                          key={idx}
+                          src={img} 
+                          alt={product.name} 
+                          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
+                            idx === (imageIndex % productImages.length) ? 'opacity-100 group-hover:scale-110 transition-transform duration-700' : 'opacity-0'
+                          }`} 
+                        />
+                      ))
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-600 uppercase text-xs tracking-widest">No Image</div>
                     )}
 
+                    {/* 🚀 Daraz Style Discount Badge (Top Left) */}
                     {discount > 0 && (
-                      <div className="absolute top-3 left-3 bg-red-600 text-white text-[10px] font-extrabold px-2.5 py-1 rounded shadow-lg z-10 flex items-center">
+                      <div className="absolute top-3 left-3 bg-gradient-to-r from-orange-500 to-red-600 text-white text-[10px] font-extrabold px-2.5 py-1 rounded shadow-lg z-10 flex items-center">
                         <Tag size={10} className="mr-1" /> -{discount}% OFF
                       </div>
+                    )}
+
+                    {/* 🚀 Stock Status Badges (Top Right) */}
+                    {product.stock > 0 && product.stock <= 5 && (
+                      <span className="absolute top-3 right-3 bg-yellow-500/90 text-black text-[10px] font-bold px-2 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
+                        Few Left ({product.stock})
+                      </span>
+                    )}
+                    {(product.stock <= 0 || product.status === 'Out of Stock') && (
+                      <span className="absolute top-3 right-3 bg-red-600/90 text-white text-[10px] font-bold px-2 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
+                        Sold Out
+                      </span>
                     )}
                   </Link>
                   
