@@ -6,18 +6,17 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 
 // 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
 import { db } from '../../firebase/config';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, getDocs } from 'firebase/firestore';
 
 export default function CategoriesPage() {
   const { settings } = useSettingsStore();
   const safeSettings = settings as any;
 
   const [categories, setCategories] = useState<any[]>([]);
-  const [dbProducts, setDbProducts] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
-
-  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে পরিবর্তন করার জন্য টাইমার
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // ছবি পরিবর্তনের টাইমার
   const [imageIndex, setImageIndex] = useState(0);
 
   useEffect(() => {
@@ -27,57 +26,67 @@ export default function CategoriesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ১. ক্লাউড থেকে প্রোডাক্ট এবং ক্যাটাগরি ডাটা প্রসেস করার ফাংশন
-  const processAllData = (cloudCats: any[], cloudProds: any[]) => {
+  // 🚀 ডাটা প্রসেস করার ফাংশন (যাতে কোনো এরর না হয়)
+  const processData = (cloudCats: any[]) => {
+    const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
+
     return cloudCats.map((cat: any) => {
       const catNameLower = (cat.name || '').trim().toLowerCase();
 
-      // রিয়েল-টাইম প্রোডাক্ট কাউন্ট (সরাসরি ক্লাউড ডাটা থেকে)
-      const count = cloudProds.filter(
-        (p: any) => p.category?.trim().toLowerCase() === catNameLower && p.status !== 'Out of Stock'
+      // প্রোডাক্ট কাউন্ট
+      const count = savedProducts.filter(
+        (p: any) => (p.category || '').trim().toLowerCase() === catNameLower && p.status !== 'Out of Stock'
       ).length;
 
-      let uploadedImages: string[] = [];
+      let imagesArray: string[] = [];
       if (Array.isArray(cat.images) && cat.images.length > 0) {
-        uploadedImages = cat.images.filter((img: string) => img && typeof img === 'string' && img.trim() !== '');
-      } else if (cat.imageUrl && typeof cat.imageUrl === 'string' && cat.imageUrl.trim() !== '') {
-        uploadedImages = [cat.imageUrl];
+        imagesArray = cat.images.filter((img: string) => img && img.trim() !== '');
+      } else if (cat.imageUrl) {
+        imagesArray = [cat.imageUrl];
       }
 
-      return {
-        ...cat,
-        count,
-        uploadedImages
-      };
+      if (imagesArray.length === 0) {
+        imagesArray = ["https://images.unsplash.com/photo-1617137968427-85924c800a22?q=80&w=600&auto=format&fit=crop"];
+      }
+
+      return { ...cat, count, imagesArray };
     });
   };
 
-  // 🚀 ২. রিয়েল-টাইম ক্লাউড সিঙ্ক (সব ডিভাইসের জন্য)
+  // 🚀 সরাসরি ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম ক্যাটাগরি লোড
   useEffect(() => {
     setLoading(true);
 
-    // ফায়ারবেস থেকে প্রোডাক্ট লিসেনার
-    const prodRef = collection(db, 'products');
-    const unsubProds = onSnapshot(prodRef, (prodSnap) => {
-      const cloudProds: any[] = [];
-      prodSnap.forEach(doc => cloudProds.push({ id: doc.id, ...doc.data() }));
-      setDbProducts(cloudProds);
-      
-      // ফায়ারবেস থেকে ক্যাটাগরি লিসেনার
+    try {
       const catRef = collection(db, 'categories');
-      const unsubCats = onSnapshot(catRef, (catSnap) => {
+      
+      // রিয়েল-টাইম লিসেনার (যাতে অল ডিভাইসে সাথে সাথে আপডেট হয়)
+      const unsubscribe = onSnapshot(catRef, (snapshot) => {
         const cloudCats: any[] = [];
-        catSnap.forEach(doc => cloudCats.push({ id: doc.id, ...doc.data() }));
+        snapshot.forEach((docSnap) => {
+          cloudCats.push({ id: docSnap.id, ...docSnap.data() });
+        });
 
-        const finalData = processAllData(cloudCats, cloudProds);
-        setCategories(finalData);
+        if (cloudCats.length > 0) {
+          const finalData = processData(cloudCats);
+          setCategories(finalData);
+          localStorage.setItem('mo_fashion_categories', JSON.stringify(cloudCats));
+        } else {
+          // যদি ক্লাউড খালি থাকে তবে লোকাল চেক করবে
+          const localCats = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
+          setCategories(processData(localCats));
+        }
+        setLoading(false);
+      }, (error) => {
+        console.error("Firebase Error:", error);
         setLoading(false);
       });
 
-      return () => unsubCats();
-    });
-
-    return () => unsubProds();
+      return () => unsubscribe();
+    } catch (e) {
+      console.error("Firestore Fetch Error:", e);
+      setLoading(false);
+    }
   }, []);
 
   const filteredCategories = categories.filter(cat =>
@@ -98,7 +107,7 @@ export default function CategoriesPage() {
             Our Collections
           </h1>
           <p className="text-gray-400 max-w-2xl mx-auto text-lg">
-            Explore our premium fashion categories synced live from the cloud.
+            Premium fashion categories synced live from the cloud database.
           </p>
         </div>
 
@@ -109,7 +118,7 @@ export default function CategoriesPage() {
           </div>
           <input 
             type="text" 
-            placeholder="Search categories..." 
+            placeholder="Search collections..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#1A1A1A] border border-gray-800 rounded-full pl-14 pr-6 py-4 text-white focus:outline-none focus:border-[#D4AF37] transition-colors shadow-lg"
@@ -119,13 +128,16 @@ export default function CategoriesPage() {
         {loading ? (
           <div className="text-center py-20 text-[#D4AF37] animate-pulse flex flex-col items-center">
             <RefreshCw size={48} className="animate-spin mb-4" />
-            <span className="text-xl font-bold uppercase tracking-widest">Connecting to Cloud...</span>
+            <span className="text-xl font-bold uppercase tracking-widest">Synchronizing Cloud...</span>
           </div>
         ) : filteredCategories.length === 0 ? (
           <div className="text-center py-20 bg-[#1A1A1A] rounded-2xl border border-dashed border-gray-800 max-w-2xl mx-auto shadow-2xl">
             <ShoppingBag size={64} className="mx-auto text-gray-600 mb-6" />
             <h2 className="text-2xl font-serif font-bold text-white mb-4">No Collections Found</h2>
-            <p className="text-gray-400 mb-8">Please add categories from the Admin Panel to see them here live.</p>
+            <p className="text-gray-400 mb-8">Please check if your Firebase Environment Variables are added to Vercel Settings.</p>
+            <Link to="/" className="inline-block bg-[#D4AF37] text-black px-8 py-3 rounded-lg font-bold uppercase tracking-wider hover:bg-white transition-colors">
+              Return to Home
+            </Link>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-10">
@@ -135,26 +147,18 @@ export default function CategoriesPage() {
                   
                   <div className="absolute inset-0 bg-black/60 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
                   
-                  {/* 🚀 আপনার আপলোড করা আসল ছবিগুলো এখানে স্লাইড হবে */}
-                  {category.uploadedImages && category.uploadedImages.length > 0 ? (
-                    category.uploadedImages.map((img: string, idx: number) => (
-                      <img 
-                        key={idx}
-                        src={img} 
-                        alt={category.name} 
-                        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
-                          idx === (imageIndex % category.uploadedImages.length) ? 'opacity-100 group-hover:scale-110 transition-transform duration-700' : 'opacity-0'
-                        }`}
-                      />
-                    ))
-                  ) : (
-                    <div className="absolute inset-0 bg-[#1A1A1A] flex flex-col items-center justify-center text-gray-600">
-                      <Layers size={48} className="mb-2 text-[#D4AF37]/30" />
-                      <span className="text-xs uppercase tracking-widest text-gray-500 font-bold px-4 text-center">Please Upload Background from Admin Panel</span>
-                    </div>
-                  )}
+                  {/* 🚀 স্লাইডার */}
+                  {category.imagesArray && category.imagesArray.map((img: string, idx: number) => (
+                    <img 
+                      key={idx}
+                      src={img} 
+                      alt={category.name} 
+                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
+                        idx === (imageIndex % category.imagesArray.length) ? 'opacity-100 group-hover:scale-110 transition-transform duration-700' : 'opacity-0'
+                      }`}
+                    />
+                  ))}
                   
-                  {/* Category Content */}
                   <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center p-6">
                     <h2 className="text-3xl font-bold text-white mb-3 font-serif drop-shadow-xl group-hover:text-[#D4AF37] transition-colors">
                       {category.name}
