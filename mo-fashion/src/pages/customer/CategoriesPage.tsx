@@ -4,6 +4,10 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Layers, ShoppingBag, Search } from 'lucide-react';
 import { useSettingsStore } from '../../store/useSettingsStore';
 
+// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
+import { db } from '../../firebase/config';
+import { collection, onSnapshot } from 'firebase/firestore';
+
 // ডিফল্ট ইমেজের লিংক (যদি অ্যাডমিন কোনো ছবি না দেয়)
 const defaultImage = "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=600&auto=format&fit=crop";
 
@@ -15,6 +19,8 @@ const categoryImages: Record<string, string> = {
 
 export default function CategoriesPage() {
   const { settings } = useSettingsStore();
+  const safeSettings = settings as any;
+
   const [categories, setCategories] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -23,71 +29,88 @@ export default function CategoriesPage() {
   const [imageIndex, setImageIndex] = useState(0);
 
   useEffect(() => {
-    // প্রতি ২ সেকেন্ড পর পর ছবি চেঞ্জ হবে
+    // প্রতি ২ সেকেন্ড পর পর ব্যাকগ্রাউন্ড ছবি চেঞ্জ হবে
     const interval = setInterval(() => {
       setImageIndex((prev) => prev + 1);
     }, 2000);
     return () => clearInterval(interval);
   }, []);
 
+  // 🚀 সরাসরি ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম ক্যাটাগরি লোড
   useEffect(() => {
-    // Local Storage থেকে অ্যাডমিনের বানানো ক্যাটাগরি এবং প্রোডাক্ট আনা হচ্ছে
-    const savedCategories = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
+    setLoading(true);
+
     const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
-    
-    let baseCategories = savedCategories;
 
-    // যদি অ্যাডমিন প্যানেলে কোনো ক্যাটাগরি না থাকে, তবে ডিফল্ট কিছু দেখাবে
-    if (baseCategories.length === 0) {
-      baseCategories = [
-        { id: 1, name: "Men's Collection", image: "" },
-        { id: 2, name: "Women's Collection", image: "" },
-        { id: 3, name: "Accessories", image: "" },
-      ];
-    }
-
-    // কোন ক্যাটাগরিতে কয়টি প্রোডাক্ট আছে তা অটোমেটিক হিসাব করা হচ্ছে
-    const enrichedCategories = baseCategories.map((cat: any) => {
-      const count = savedProducts.filter((p: any) => p.category === cat.name && p.status !== 'Out of Stock').length;
+    try {
+      const colRef = collection(db, 'categories');
       
-      // 🚀 আপনি Category Management থেকে যে একাধিক ছবি দিয়েছেন (images array) তা ধরা হচ্ছে
-      let imagesArray: string[] = [];
-      
-      if (Array.isArray(cat.images) && cat.images.length > 0) {
-        imagesArray = cat.images.filter((url: string) => url && url.trim() !== '');
-      } else if (cat.image && typeof cat.image === 'string' && cat.image.trim() !== '') {
-        imagesArray = cat.image.split(/,|\s+/).map((url: string) => url.trim()).filter((url: string) => url.startsWith('http') || url.startsWith('data:image'));
-      }
+      // ফায়ারবেস ক্লাউড ডাটাবেস লিসেনার
+      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+        const cloudCats: any[] = [];
+        snapshot.forEach((docSnap) => {
+          cloudCats.push({ id: docSnap.id, ...docSnap.data() });
+        });
 
-      // যদি কোনো লিংক না থাকে, তবে ডিফল্ট ছবি
-      if (imagesArray.length === 0) {
-        if (categoryImages[cat.name]) {
-          imagesArray.push(categoryImages[cat.name]);
-        } else {
-          imagesArray.push(defaultImage);
+        let baseCategories = cloudCats.length > 0 
+          ? cloudCats 
+          : JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
+
+        if (baseCategories.length === 0) {
+          baseCategories = [
+            { id: 1, name: "Men's Collection" },
+            { id: 2, name: "Women's Collection" },
+            { id: 3, name: "Accessories" },
+          ];
         }
-      }
 
-      return {
-        ...cat,
-        count,
-        imagesArray // স্লাইডশোর জন্য এই Array ব্যবহার হবে
-      };
-    });
+        // প্রোডাক্ট কাউন্ট ও স্লাইডশো ইমেজ প্রসেসিং
+        const enrichedCategories = baseCategories.map((cat: any) => {
+          const count = savedProducts.filter((p: any) => p.category === cat.name && p.status !== 'Out of Stock').length;
+          
+          let imagesArray: string[] = [];
+          if (Array.isArray(cat.images) && cat.images.length > 0) {
+            imagesArray = cat.images.filter((url: string) => url && url.trim() !== '');
+          } else if (cat.image && typeof cat.image === 'string' && cat.image.trim() !== '') {
+            imagesArray = cat.image.split(/,|\s+/).map((url: string) => url.trim()).filter((url: string) => url.startsWith('http') || url.startsWith('data:image'));
+          }
 
-    setCategories(enrichedCategories);
-    setLoading(false);
+          if (imagesArray.length === 0) {
+            if (categoryImages[cat.name]) {
+              imagesArray.push(categoryImages[cat.name]);
+            } else {
+              imagesArray.push(defaultImage);
+            }
+          }
+
+          return {
+            ...cat,
+            count,
+            imagesArray
+          };
+        });
+
+        setCategories(enrichedCategories);
+        localStorage.setItem('mo_fashion_categories', JSON.stringify(enrichedCategories));
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
+    } catch (e) {
+      console.error("Firestore Category Fetch Error:", e);
+      setLoading(false);
+    }
   }, []);
 
-  // 🚀 ক্যাটাগরি পেজের নিজস্ব লাইভ সার্চ ফিল্টার
+  // ক্যাটাগরি পেজের নিজস্ব লাইভ সার্চ ফিল্টার
   const filteredCategories = categories.filter(cat =>
-    cat.name.toLowerCase().includes(searchQuery.toLowerCase())
+    cat.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
     <main className="min-h-screen py-12 bg-[#111111] text-white">
       <Helmet>
-        <title>Categories | {settings.storeName}</title>
+        <title>Categories | {safeSettings?.storeName || 'MO FASHION'}</title>
       </Helmet>
 
       <div className="container mx-auto px-4">
@@ -103,7 +126,7 @@ export default function CategoriesPage() {
           </p>
         </div>
 
-        {/* 🚀 Category Search Bar */}
+        {/* Category Search Bar */}
         <div className="max-w-xl mx-auto mb-16 relative group">
           <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
             <Search className="text-gray-500 group-focus-within:text-[#D4AF37] transition-colors" size={20} />
@@ -120,7 +143,6 @@ export default function CategoriesPage() {
         {loading ? (
           <div className="text-center py-20 text-[#D4AF37] animate-pulse font-medium">Loading collections...</div>
         ) : filteredCategories.length === 0 ? (
-          /* Empty State */
           <div className="text-center py-20 bg-[#1A1A1A] rounded-2xl border border-dashed border-gray-800 max-w-2xl mx-auto shadow-2xl">
             <ShoppingBag size={64} className="mx-auto text-gray-600 mb-6" />
             <h2 className="text-2xl font-serif font-bold text-white mb-4">No Collections Found</h2>
@@ -132,7 +154,6 @@ export default function CategoriesPage() {
             </Link>
           </div>
         ) : (
-          /* Categories Grid */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-10">
             {filteredCategories.map((category, index) => (
               <Link to={`/category/${encodeURIComponent(category.name)}`} key={index} className="group">
@@ -141,7 +162,7 @@ export default function CategoriesPage() {
                   {/* Background Overlay */}
                   <div className="absolute inset-0 bg-black/60 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
                   
-                  {/* 🚀 ম্যাজিক অটোমেটিক ইমেজ স্লাইডার */}
+                  {/* 🚀 ২ সেকেন্ডের ব্যাকগ্রাউন্ড অটো স্লাইডার */}
                   {category.imagesArray && category.imagesArray.map((img: string, idx: number) => (
                     <img 
                       key={idx}
