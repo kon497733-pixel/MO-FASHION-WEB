@@ -10,6 +10,7 @@ export default function Products() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadIndex, setUploadIndex] = useState<number | null>(null);
 
+  // 🚀 আপনার লাইভ রেন্ডার মঙ্গোডিবি ব্যাকএন্ড এপিআই
   const API_URL = 'https://mo-fashion-api-mehedi.onrender.com/api/products';
 
   const [products, setProducts] = useState<any[]>([]);
@@ -22,14 +23,15 @@ export default function Products() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   
-  // 🚀 ফর্মে স্পষ্ট Discount (%) বক্স
+  // 🚀 ফর্মে Discount (%) ফিল্ড
   const [formData, setFormData] = useState({
     _id: '', id: '', name: '', description: '', category: '',
-    price: '',    // রেগুলার প্রাইজ
-    discount: '0', // স্পেসিফিক ডিসকাউন্ট % বক্স
+    price: '',         // অরিজিনাল প্রাইস
+    discount: '0',     // ডিসকাউন্ট পার্সেন্টেজ
     stock: '', status: 'Active', images: [''],
   });
 
+  // 🚀 ১. ডাটাবেস থেকে প্রোডাক্ট লোড করা
   const fetchProducts = async () => {
     try {
       setLoading(true);
@@ -75,7 +77,7 @@ export default function Products() {
       description: product.description || '', 
       category: product.category || "Men's Collection",
       price: product.price ? product.price.toString() : '',
-      discount: product.discount !== undefined ? product.discount.toString() : '0',
+      discount: (product.discount !== undefined && product.discount !== null) ? product.discount.toString() : '0',
       stock: product.stock !== undefined ? product.stock.toString() : '0',
       status: product.status || 'Active',
       images: product.images && product.images.length > 0 ? [...product.images] : (product.imageUrl ? [product.imageUrl] : [''])
@@ -138,6 +140,7 @@ export default function Products() {
     }
   };
 
+  // 🚀 ২. ডিসকাউন্টসহ সেভ করার ফিক্সড ফাংশন
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -149,14 +152,15 @@ export default function Products() {
     const validImages = formData.images.filter(url => url && url.trim() !== '');
     const origPrice = Number(formData.price) || 0;
     const discPercent = Number(formData.discount) || 0;
-    const sellingPrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
+    const calcSalePrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
 
+    // 🚀 ডিসকাউন্ট ডাটাবেসে পারমানেন্ট সেভ করার পে-লোড
     const productPayload = {
       name: formData.name.trim(),
       description: formData.description?.trim() || 'Premium quality product',
-      price: origPrice,
-      discount: discPercent,        // ডিসকাউন্ট %
-      discountPrice: sellingPrice,   // সেলস প্রাইস
+      price: origPrice,               // অরিজিনাল প্রাইজ
+      discount: discPercent,         // ডিসকাউন্ট %
+      discountPrice: calcSalePrice,    // সেলস প্রাইজ
       stock: Number(formData.stock) || 0,
       status: Number(formData.stock) <= 0 ? 'Out of Stock' : (formData.status || 'Active'),
       category: formData.category || "Men's Collection",
@@ -165,7 +169,7 @@ export default function Products() {
     };
 
     setIsSaving(true);
-    const toastId = toast.loading("Saving product to cloud database...");
+    const toastId = toast.loading("Saving product & discount to live database...");
 
     try {
       const url = modalMode === 'add' ? API_URL : `${API_URL}/${formData._id || formData.id}`;
@@ -178,7 +182,7 @@ export default function Products() {
       });
 
       if (response.ok) {
-        toast.success("Product saved LIVE on cloud database!", { id: toastId });
+        toast.success("Product & Discount saved LIVE on cloud database!", { id: toastId });
         setIsModalOpen(false);
         fetchProducts(); 
       } else {
@@ -243,7 +247,7 @@ export default function Products() {
                 <tr>
                   <th className="px-6 py-4">Product Details</th>
                   <th className="px-6 py-4">Category</th>
-                  <th className="px-6 py-4">Price & Discount</th>
+                  <th className="px-6 py-4">Price & Discount Breakdown</th>
                   <th className="px-6 py-4 text-center">Remaining Stock</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Actions</th>
@@ -253,7 +257,8 @@ export default function Products() {
                 {filteredProducts.map((p: any) => {
                   const origPrice = Number(p.price) || 0;
                   const discPercent = Number(p.discount) || 0;
-                  const salePrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
+                  const calcSalePrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
+                  const discountAmount = origPrice - calcSalePrice;
                   const stockVal = Number(p.stock) || 0;
 
                   let statusColor = 'text-green-400 bg-green-500/10 border-green-500/20';
@@ -280,24 +285,25 @@ export default function Products() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-400">{p.category}</td>
                       
-                      {/* 🚀 Price & Discount Badge in Table */}
+                      {/* 🚀 ৩. Price, Original Price, % OFF এবং Final Price ডিসপ্লে */}
                       <td className="px-6 py-4">
+                        <div className="text-xs text-gray-400">
+                          Regular: <span className={discPercent > 0 ? "line-through text-gray-500" : "text-white font-bold"}>৳{origPrice.toFixed(2)}</span>
+                        </div>
+
                         {discPercent > 0 ? (
-                          <div>
-                            <div className="font-bold text-[#D4AF37] text-base">
-                              ৳{salePrice.toFixed(2)}
-                            </div>
-                            <div className="flex items-center space-x-1.5 mt-1">
-                              <span className="text-gray-500 line-through text-xs">৳{origPrice.toFixed(2)}</span>
-                              <span className="text-[10px] text-white font-extrabold bg-gradient-to-r from-orange-500 to-red-600 px-1.5 py-0.5 rounded flex items-center shadow">
-                                <Tag size={10} className="mr-0.5" /> -{discPercent}% OFF
+                          <>
+                            <div className="my-1">
+                              <span className="text-[10px] text-white font-extrabold bg-gradient-to-r from-orange-500 to-red-600 px-2 py-0.5 rounded inline-flex items-center shadow">
+                                <Tag size={10} className="mr-1" /> -{discPercent}% OFF (Save ৳{discountAmount.toFixed(2)})
                               </span>
                             </div>
-                          </div>
+                            <div className="font-bold text-[#D4AF37] text-base mt-0.5">
+                              Final: ৳{calcSalePrice.toFixed(2)}
+                            </div>
+                          </>
                         ) : (
-                          <div className="font-bold text-white text-base">
-                            ৳{origPrice.toFixed(2)}
-                          </div>
+                          <div className="text-xs text-gray-500 mt-1">No Discount Applied</div>
                         )}
                       </td>
 
@@ -340,7 +346,7 @@ export default function Products() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-gray-300 text-sm mb-2 font-medium">Product Name *</label>
-                    <input type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white focus:border-[#D4AF37] focus:outline-none" placeholder="e.g. Signature Cotton Shirt" />
+                    <input type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white focus:border-[#D4AF37] focus:outline-none" placeholder="e.g. Signature Shirt" />
                   </div>
                   
                   <div>
@@ -351,7 +357,7 @@ export default function Products() {
 
                 <div className="space-y-4">
                   {/* 🚀 Regular Price & Discount (%) Input Box */}
-                  <div className="grid grid-cols-2 gap-3 bg-[#111111] p-3 rounded-xl border border-gray-800">
+                  <div className="grid grid-cols-2 gap-4 bg-[#111111] p-3 rounded-xl border border-gray-800">
                     <div>
                       <label className="block text-gray-300 text-xs mb-1 font-medium">Regular Price (৳) *</label>
                       <input 
@@ -365,7 +371,6 @@ export default function Products() {
                       />
                     </div>
 
-                    {/* 🚀 নির্দিষ্ট Discount (%) বক্স */}
                     <div>
                       <label className="block text-[#D4AF37] text-xs mb-1 font-bold flex items-center">
                         Discount (%) <Percent size={12} className="ml-1" />
