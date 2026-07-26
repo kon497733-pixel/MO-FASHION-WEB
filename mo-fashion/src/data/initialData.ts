@@ -8,7 +8,7 @@ export const INITIAL_SETTINGS = {
   logoUrl: '', 
   aboutImageUrl: '', 
   tagline: 'Premium E-Commerce Experience. OWNER - MD.MEHEDI HASAN . (1589)',
-  contactEmail: 'support@mofashion.com',
+  contactEmail: 'kon497733@gmail.com',
   phoneNumber: '+880 1707697445',
   address: 'CDA Agrabad, Chattogram, Bangladesh',
   currency: '$',

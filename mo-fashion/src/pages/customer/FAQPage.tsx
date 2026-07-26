@@ -101,7 +101,7 @@ export default function FAQPage() {
           <p className="text-gray-400 mb-6">If you cannot find the answer to your question in our FAQ, you can always contact us. We will answer to you shortly!</p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href="mailto:support@mofashion.com" className="flex items-center space-x-2 bg-[#D4AF37] text-black px-6 py-3 rounded-lg font-bold hover:bg-white transition-colors w-full sm:w-auto justify-center">
+            <a href="mailto:kon497733@gmail.com" className="flex items-center space-x-2 bg-[#D4AF37] text-black px-6 py-3 rounded-lg font-bold hover:bg-white transition-colors w-full sm:w-auto justify-center">
               <Mail size={18} />
               <span>Email Support</span>
             </a>

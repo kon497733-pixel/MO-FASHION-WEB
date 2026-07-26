@@ -15,7 +15,7 @@ export default function Footer() {
     storeName: 'MO FASHION',
     logoUrl: '',
     tagline: 'Premium E-Commerce Experience. OWNER - MD.MEHEDI HASAN . (1589)',
-    contactEmail: 'support@mofashion.com',
+    contactEmail: 'kon497733@gmail.com',
     phoneNumber: '+880 1707697445',
     address: 'CDA Agrabad, Chattogram, Bangladesh',
     currency: '৳',
@@ -131,7 +131,7 @@ export default function Footer() {
               </li>
               <li className="flex items-center space-x-3">
                 <Mail size={18} className="text-[#D4AF37] shrink-0" />
-                <span>{active?.contactEmail || 'support@mofashion.com'}</span>
+                <span>{active?.contactEmail || 'kon497733@gmail.com'}</span>
               </li>
             </ul>
           </div>
