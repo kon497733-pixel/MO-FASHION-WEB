@@ -22,12 +22,14 @@ export default function Products() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   
+  // 🚀 ফর্মে স্পষ্ট Discount (%) বক্স
   const [formData, setFormData] = useState({
     _id: '', id: '', name: '', description: '', category: '',
-    price: '', discount: '', stock: '', status: 'Active', images: [''],
+    price: '',    // রেগুলার প্রাইজ
+    discount: '0', // স্পেসিফিক ডিসকাউন্ট % বক্স
+    stock: '', status: 'Active', images: [''],
   });
 
-  // 🚀 লাইভ ক্লাউড ডাটাবেস থেকে প্রোডাক্ট লোড
   const fetchProducts = async () => {
     try {
       setLoading(true);
@@ -73,7 +75,7 @@ export default function Products() {
       description: product.description || '', 
       category: product.category || "Men's Collection",
       price: product.price ? product.price.toString() : '',
-      discount: product.discount ? product.discount.toString() : '0',
+      discount: product.discount !== undefined ? product.discount.toString() : '0',
       stock: product.stock !== undefined ? product.stock.toString() : '0',
       status: product.status || 'Active',
       images: product.images && product.images.length > 0 ? [...product.images] : (product.imageUrl ? [product.imageUrl] : [''])
@@ -81,7 +83,6 @@ export default function Products() {
     setIsModalOpen(true);
   };
 
-  // 🚀 ডেস্কটপ ফটো আপলোড কমপ্রেশন
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && uploadIndex !== null) {
@@ -101,7 +102,7 @@ export default function Products() {
           const updatedImages = [...formData.images];
           updatedImages[uploadIndex] = compressedBase64;
           setFormData({ ...formData, images: updatedImages });
-          toast.success('Image compressed and loaded!');
+          toast.success('Image loaded!');
         };
         img.src = event.target?.result as string;
       };
@@ -120,7 +121,6 @@ export default function Products() {
     setFormData({ ...formData, images: updatedImages });
   };
 
-  // 🚀 ডিলিট ফাংশন
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
       const toastId = toast.loading("Deleting from live database...");
@@ -138,22 +138,25 @@ export default function Products() {
     }
   };
 
-  // 🚀 সেভ এবং আপডেট ফাংশন
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.name.trim() || !formData.price) {
-      toast.error("Please enter product name and price!");
+      toast.error("Please enter product name and regular price!");
       return;
     }
 
     const validImages = formData.images.filter(url => url && url.trim() !== '');
+    const origPrice = Number(formData.price) || 0;
+    const discPercent = Number(formData.discount) || 0;
+    const sellingPrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
 
     const productPayload = {
       name: formData.name.trim(),
       description: formData.description?.trim() || 'Premium quality product',
-      price: Number(formData.price),
-      discount: Number(formData.discount) || 0,
+      price: origPrice,
+      discount: discPercent,        // ডিসকাউন্ট %
+      discountPrice: sellingPrice,   // সেলস প্রাইস
       stock: Number(formData.stock) || 0,
       status: Number(formData.stock) <= 0 ? 'Out of Stock' : (formData.status || 'Active'),
       category: formData.category || "Men's Collection",
@@ -199,19 +202,18 @@ export default function Products() {
     <div className="text-white pb-10">
       <Helmet><title>Admin - Products Management | MO FASHION</title></Helmet>
       
-      {/* Header Section with Total Count */}
+      {/* Header Section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <div className="flex items-center space-x-3">
             <h1 className="text-2xl font-serif font-bold text-[#D4AF37] uppercase flex items-center">
               <Package className="mr-3" size={28} /> Products Management
             </h1>
-            {/* 🚀 মোট প্রোডাক্ট সংখ্যা কাউন্টার */}
             <span className="bg-[#D4AF37]/10 text-[#D4AF37] text-xs font-bold px-3 py-1 rounded-full border border-[#D4AF37]/30 flex items-center">
-              <Box size={14} className="mr-1" /> Total: {products.length} {products.length === 1 ? 'Product' : 'Products'}
+              <Box size={14} className="mr-1" /> Total: {products.length} Products
             </span>
           </div>
-          <p className="text-sm text-gray-400 mt-1">Manage live database inventory and stock levels</p>
+          <p className="text-sm text-gray-400 mt-1">Manage live database inventory, discounts, and stock levels</p>
         </div>
         <button onClick={handleOpenAdd} className="bg-[#D4AF37] text-black px-5 py-2.5 rounded-lg hover:bg-white font-bold flex items-center space-x-2 shadow-lg">
           <Plus size={20} /> <span>Add New Product</span>
@@ -230,7 +232,7 @@ export default function Products() {
         </select>
       </div>
 
-      {/* Products Table with Detailed Badges */}
+      {/* Products Table */}
       <div className="bg-[#1A1A1A] rounded-xl border border-[#D4AF37]/20 overflow-hidden shadow-lg">
         <div className="overflow-x-auto">
           {loading ? (
@@ -249,12 +251,11 @@ export default function Products() {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {filteredProducts.map((p: any) => {
-                  const originalPrice = Number(p.price) || 0;
-                  const discountPercent = Number(p.discount) || 0;
-                  const sellingPrice = discountPercent > 0 ? originalPrice - (originalPrice * discountPercent / 100) : originalPrice;
+                  const origPrice = Number(p.price) || 0;
+                  const discPercent = Number(p.discount) || 0;
+                  const salePrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
                   const stockVal = Number(p.stock) || 0;
 
-                  // 🚀 স্ট্যাটাস ব্যাজের কালার লজিক
                   let statusColor = 'text-green-400 bg-green-500/10 border-green-500/20';
                   let displayStatus = p.status || 'Active';
                   
@@ -268,52 +269,50 @@ export default function Products() {
 
                   return (
                     <tr key={p._id || p.id} className="hover:bg-[#111111]/50 transition-colors">
-                      {/* Product Info */}
                       <td className="px-6 py-4">
                         <div className="flex items-center space-x-3">
                           <img src={p.images?.[0] || p.imageUrl || 'https://via.placeholder.com/100'} alt="" className="w-12 h-12 rounded-lg object-cover border border-gray-700 shrink-0" />
-                          <div className="flex flex-col">
-                            <span className="font-bold text-white max-w-[180px] truncate">{p.name}</span>
+                          <div>
+                            <span className="font-bold text-white max-w-[180px] truncate block">{p.name}</span>
                             <span className="text-[10px] text-gray-500">{p.images?.length || 1} {(p.images?.length || 1) === 1 ? 'Image' : 'Images'}</span>
                           </div>
                         </div>
                       </td>
-
-                      {/* Category */}
                       <td className="px-6 py-4 text-sm text-gray-400">{p.category}</td>
-
-                      {/* 🚀 Price & Discount Badge */}
+                      
+                      {/* 🚀 Price & Discount Badge in Table */}
                       <td className="px-6 py-4">
-                        <div className="font-bold text-[#D4AF37] text-base">
-                          ৳{sellingPrice.toFixed(2)}
-                        </div>
-                        {discountPercent > 0 ? (
-                          <div className="flex items-center space-x-1.5 mt-1">
-                            <span className="text-gray-500 line-through text-xs">৳{originalPrice.toFixed(2)}</span>
-                            <span className="text-[10px] text-white font-extrabold bg-gradient-to-r from-orange-500 to-red-600 px-1.5 py-0.5 rounded flex items-center">
-                              <Tag size={10} className="mr-0.5" /> -{discountPercent}% OFF
-                            </span>
+                        {discPercent > 0 ? (
+                          <div>
+                            <div className="font-bold text-[#D4AF37] text-base">
+                              ৳{salePrice.toFixed(2)}
+                            </div>
+                            <div className="flex items-center space-x-1.5 mt-1">
+                              <span className="text-gray-500 line-through text-xs">৳{origPrice.toFixed(2)}</span>
+                              <span className="text-[10px] text-white font-extrabold bg-gradient-to-r from-orange-500 to-red-600 px-1.5 py-0.5 rounded flex items-center shadow">
+                                <Tag size={10} className="mr-0.5" /> -{discPercent}% OFF
+                              </span>
+                            </div>
                           </div>
                         ) : (
-                          <span className="text-[10px] text-gray-500">Regular Price</span>
+                          <div className="font-bold text-white text-base">
+                            ৳{origPrice.toFixed(2)}
+                          </div>
                         )}
                       </td>
 
-                      {/* 🚀 Stock Remaining */}
                       <td className="px-6 py-4 text-center">
                         <span className={`font-bold text-sm ${stockVal > 5 ? 'text-white' : stockVal > 0 ? 'text-yellow-400' : 'text-red-500'}`}>
                           {stockVal} {stockVal === 1 ? 'item' : 'units'} left
                         </span>
                       </td>
 
-                      {/* 🚀 Status Badge */}
                       <td className="px-6 py-4">
                         <span className={`px-3 py-1 rounded-full text-xs font-bold border inline-block ${statusColor}`}>
                           {displayStatus}
                         </span>
                       </td>
 
-                      {/* Actions */}
                       <td className="px-6 py-4 text-right space-x-2">
                         <button onClick={() => handleOpenEdit(p)} className="p-2 text-gray-400 hover:text-[#D4AF37]"><Edit size={16} /></button>
                         <button onClick={() => handleDelete(p._id || p.id, p.name)} className="p-2 text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
@@ -339,45 +338,77 @@ export default function Products() {
             <form onSubmit={handleSubmit} className="overflow-y-auto custom-scrollbar p-6 space-y-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-4">
-                  <label className="block text-gray-300 text-sm font-medium">Product Name *</label>
-                  <input type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white focus:border-[#D4AF37] focus:outline-none" />
+                  <div>
+                    <label className="block text-gray-300 text-sm mb-2 font-medium">Product Name *</label>
+                    <input type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white focus:border-[#D4AF37] focus:outline-none" placeholder="e.g. Signature Cotton Shirt" />
+                  </div>
                   
-                  <label className="block text-gray-300 text-sm font-medium">Product Description</label>
-                  <textarea rows={4} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white focus:border-[#D4AF37] focus:outline-none resize-none" placeholder="Details..."></textarea>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-gray-300 text-sm font-medium">Price (৳) *</label>
-                      <input type="number" required value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white" />
-                    </div>
-                    <div>
-                      <label className="block text-gray-300 text-sm font-medium">Discount (%)</label>
-                      <input type="number" min="0" max="99" value={formData.discount} onChange={(e) => setFormData({...formData, discount: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white" placeholder="e.g. 10" />
-                    </div>
+                  <div>
+                    <label className="block text-gray-300 text-sm mb-2 font-medium">Product Description</label>
+                    <textarea rows={5} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white focus:border-[#D4AF37] focus:outline-none resize-none" placeholder="Write full product details..."></textarea>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <label className="block text-gray-300 text-sm font-medium">Category</label>
-                  <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white cursor-pointer">
-                    {categories.map((cat: any, i: number) => (<option key={i} value={cat.name}>{cat.name}</option>))}
-                  </select>
+                  {/* 🚀 Regular Price & Discount (%) Input Box */}
+                  <div className="grid grid-cols-2 gap-3 bg-[#111111] p-3 rounded-xl border border-gray-800">
+                    <div>
+                      <label className="block text-gray-300 text-xs mb-1 font-medium">Regular Price (৳) *</label>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        required 
+                        value={formData.price} 
+                        onChange={(e) => setFormData({...formData, price: e.target.value})} 
+                        className="w-full bg-[#1A1A1A] border border-gray-700 rounded p-2 text-white font-bold text-sm focus:border-[#D4AF37] focus:outline-none" 
+                        placeholder="1000"
+                      />
+                    </div>
 
-                  <label className="block text-gray-300 text-sm font-medium">Stock Quantity *</label>
-                  <input type="number" required value={formData.stock} onChange={(e) => setFormData({...formData, stock: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white" />
+                    {/* 🚀 নির্দিষ্ট Discount (%) বক্স */}
+                    <div>
+                      <label className="block text-[#D4AF37] text-xs mb-1 font-bold flex items-center">
+                        Discount (%) <Percent size={12} className="ml-1" />
+                      </label>
+                      <input 
+                        type="number" 
+                        min="0" 
+                        max="99" 
+                        value={formData.discount} 
+                        onChange={(e) => setFormData({...formData, discount: e.target.value})} 
+                        className="w-full bg-[#1A1A1A] border border-[#D4AF37]/50 rounded p-2 text-[#D4AF37] font-bold text-sm focus:border-[#D4AF37] focus:outline-none" 
+                        placeholder="e.g. 10"
+                      />
+                    </div>
+                  </div>
 
-                  <label className="block text-gray-300 text-sm font-medium">Product Status</label>
-                  <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white focus:border-[#D4AF37] focus:outline-none cursor-pointer">
-                    <option value="Active">Active</option>
-                    <option value="In Stock">In Stock</option>
-                    <option value="Low Stock">Low Stock</option>
-                    <option value="Out of Stock">Out of Stock</option>
-                  </select>
+                  <div>
+                    <label className="block text-gray-300 text-sm mb-2 font-medium">Category</label>
+                    <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white cursor-pointer">
+                      {categories.map((cat: any, i: number) => (<option key={i} value={cat.name}>{cat.name}</option>))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-gray-300 text-sm mb-2 font-medium">Stock *</label>
+                      <input type="number" required value={formData.stock} onChange={(e) => setFormData({...formData, stock: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white" />
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 text-sm mb-2 font-medium">Status</label>
+                      <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white cursor-pointer">
+                        <option value="Active">Active</option>
+                        <option value="In Stock">In Stock</option>
+                        <option value="Low Stock">Low Stock</option>
+                        <option value="Out of Stock">Out of Stock</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Image Section */}
-              <div className="space-y-4 pt-4 border-t border-gray-800">
+              {/* Image Gallery */}
+              <div className="space-y-3 pt-4 border-t border-gray-800">
                 <label className="block text-[#D4AF37] font-bold text-sm flex items-center gap-2">
                   <ImageIcon size={18} /> Product Images Gallery
                 </label>
