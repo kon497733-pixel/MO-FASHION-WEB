@@ -3,13 +3,12 @@ import { Plus, Edit, Trash2, X, Image as ImageIcon, Folder, Upload } from 'lucid
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
 import { db } from '../../firebase/config';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, setDoc, deleteDoc, doc } from 'firebase/firestore';
 
 export default function CategoryManagement() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadIndex, setUploadIndex] = useState<number | null>(null);
 
-  // 🚀 ১. ইনস্ট্যান্ট লোডের জন্য লোকাল স্টোরেজ থেকে ইনিশিয়ালাইজেশন
   const [categories, setCategories] = useState<any[]>(() => {
     const saved = localStorage.getItem('mo_fashion_categories');
     return saved ? JSON.parse(saved) : [];
@@ -25,9 +24,10 @@ export default function CategoryManagement() {
     images: ['']
   });
 
-  // 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ থেকে ক্যাটাগরি ফেচ করা
+  // 🚀 ১. ফায়ারবেস ক্লাউড ডাটাবেজ থেকে ক্যাটাগরি ফেচ করা
   const fetchCategories = async () => {
     try {
+      setLoading(true);
       const querySnapshot = await getDocs(collection(db, 'categories'));
       const catArray = querySnapshot.docs.map(docData => ({ id: docData.id, ...docData.data() }));
       if (catArray.length > 0) {
@@ -45,7 +45,7 @@ export default function CategoryManagement() {
     fetchCategories();
   }, []);
 
-  // 🚀 ডেস্কটপ ফটো আপলোড ও কমপ্রেশন হ্যান্ডলার
+  // 🚀 ২. সুপার কমপ্রেসড আপলোড (যাতে ক্লাউড ডাটাবেস কখনো রিজেক্ট না করে)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && uploadIndex !== null) {
@@ -54,18 +54,18 @@ export default function CategoryManagement() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 600; 
+          const MAX_WIDTH = 350; // ৩৫০ পিক্সেল (যা অত্যন্ত হালকা কিন্তু এইচডি দেখাবে)
           const scaleFactor = Math.min(1, MAX_WIDTH / img.width);
           canvas.width = img.width * scaleFactor;
           canvas.height = img.height * scaleFactor;
           const ctx = canvas.getContext('2d');
           if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.65);
           const updatedImages = [...formData.images];
           updatedImages[uploadIndex] = compressedBase64;
           setFormData({ ...formData, images: updatedImages });
-          toast.success('Category image loaded from desktop!');
+          toast.success('Category photo loaded & compressed!');
         };
         img.src = event.target?.result as string;
       };
@@ -118,7 +118,7 @@ export default function CategoryManagement() {
     setFormData({ ...formData, images: updatedImages });
   };
 
-  // 🚀 ইনস্ট্যান্ট সেভ (০.১ সেকেন্ডে) + ব্যাকগ্রাউন্ড ক্লাউড সিঙ্ক
+  // 🚀 ৩. সরাসরি ক্লাউডে পারমানেন্ট সেভ করার ফিক্সড ফাংশন
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -134,34 +134,32 @@ export default function CategoryManagement() {
       updatedAt: new Date().toISOString()
     };
 
-    const tempId = formData.id || Date.now().toString();
-    const localCatObj = { id: tempId, ...catData };
+    const toastId = toast.loading("Pushing category & images to Cloud Database...");
 
-    let updatedList = [];
-    if (modalMode === 'add') {
-      updatedList = [localCatObj, ...categories];
-    } else {
-      updatedList = categories.map(c => c.id === formData.id ? localCatObj : c);
-    }
-
-    // ১. ব্রাউজারে ইনস্ট্যান্ট সেভ
-    setCategories(updatedList);
-    localStorage.setItem('mo_fashion_categories', JSON.stringify(updatedList));
-    window.dispatchEvent(new Event('storage'));
-    window.dispatchEvent(new Event('categoriesUpdated'));
-
-    setIsModalOpen(false);
-    toast.success(modalMode === 'add' ? 'Category saved!' : 'Category updated!');
-
-    // ২. ক্লাউড ডাটাবেজে ব্যাকগ্রাউন্ডে সেভ
     try {
       if (modalMode === 'add') {
-        await addDoc(collection(db, "categories"), catData);
+        const docRef = await addDoc(collection(db, "categories"), catData);
+        const newCatObj = { id: docRef.id, ...catData };
+        const updatedList = [newCatObj, ...categories];
+        setCategories(updatedList);
+        localStorage.setItem('mo_fashion_categories', JSON.stringify(updatedList));
       } else {
-        await updateDoc(doc(db, "categories", formData.id), catData);
+        const catRef = doc(db, "categories", formData.id);
+        await setDoc(catRef, catData, { merge: true });
+        const updatedList = categories.map(c => c.id === formData.id ? { id: formData.id, ...catData } : c);
+        setCategories(updatedList);
+        localStorage.setItem('mo_fashion_categories', JSON.stringify(updatedList));
       }
-    } catch (e) {
-      console.warn("Cloud sync skipped.");
+
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('categoriesUpdated'));
+
+      toast.success("Category & Slideshow Images Live on Cloud!", { id: toastId });
+      setIsModalOpen(false);
+      fetchCategories();
+    } catch (e: any) {
+      console.error("Cloud Category Save Error:", e);
+      toast.error("Save Error: File size too large or network issue", { id: toastId });
     }
   };
 
@@ -181,7 +179,7 @@ export default function CategoryManagement() {
 
       <div className="bg-[#1A1A1A] rounded-xl border border-[#D4AF37]/20 p-6 shadow-xl">
         {loading && categories.length === 0 ? (
-          <div className="text-center text-[#D4AF37] animate-pulse py-10">Loading Categories...</div>
+          <div className="text-center text-[#D4AF37] animate-pulse py-10">Loading Cloud Categories...</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {categories.map((cat: any) => (
@@ -237,9 +235,8 @@ export default function CategoryManagement() {
                     <div className="w-10 h-10 rounded bg-[#1A1A1A] border border-gray-700 overflow-hidden shrink-0 flex items-center justify-center">
                       {img ? <img src={img} className="w-full h-full object-cover" /> : <ImageIcon size={16} className="text-gray-600" />}
                     </div>
-                    <input type="text" placeholder="Paste image URL..." value={img} onChange={(e) => handleImageChange(i, e.target.value)} className="flex-1 bg-transparent border-b border-gray-700 p-1 text-xs text-white focus:border-[#D4AF37] focus:outline-none" />
+                    <input type="text" placeholder="Paste image URL..." value={img} onChange={(e) => handleImageChange(i, e.target.value)} className="flex-1 bg-transparent border-b border-gray-800 p-1 text-xs text-white focus:border-[#D4AF37] focus:outline-none" />
                     
-                    {/* 🚀 ডেস্কটপ ফাইল আপলোড বাটন */}
                     <button type="button" onClick={() => { setUploadIndex(i); fileInputRef.current?.click(); }} className="p-2 bg-gray-800 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black rounded-md transition-colors" title="Upload from desktop">
                       <Upload size={14} />
                     </button>
@@ -259,7 +256,7 @@ export default function CategoryManagement() {
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-gray-800">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2 border border-gray-700 rounded-lg text-gray-300 font-medium">Cancel</button>
-                <button type="submit" className="bg-[#D4AF37] text-black px-6 py-2 rounded-lg font-bold hover:bg-white transition-all shadow-md">Save Category</button>
+                <button type="submit" className="bg-[#D4AF37] text-black px-6 py-2 rounded-lg font-bold hover:bg-white transition-all shadow-md">Save Category & Push Live</button>
               </div>
             </form>
           </div>
