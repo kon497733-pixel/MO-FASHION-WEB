@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Search, Tag, RefreshCw, Box } from 'lucide-react';
+import { ShoppingBag, Search, Tag, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -30,7 +30,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ১. সরাসরি লাইভ ক্লাউড ডাটাবেস থেকে সমস্ত প্রোডাক্ট ফেচ করা
+  // 🚀 ১. সরাসরি ক্লাউড ডাটাবেস থেকে প্রোডাক্ট ফেচ ও ডিসকাউন্ট রিকভার করা
   const fetchLiveProducts = async () => {
     try {
       setLoading(true);
@@ -38,7 +38,20 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          const latestFirst = [...data].reverse();
+          // ডিসকাউন্ট পার্সেন্টেজ এক্সট্র্যাক্ট লজিক
+          const parsedProducts = data.map((p: any) => {
+            let extractedDiscount = Number(p.discount) || 0;
+            if (extractedDiscount === 0 && p.description && p.description.includes('[DISCOUNT:')) {
+              const match = p.description.match(/\[DISCOUNT:(\d+)\]/);
+              if (match) extractedDiscount = Number(match[1]);
+            }
+            return {
+              ...p,
+              discount: extractedDiscount
+            };
+          });
+
+          const latestFirst = [...parsedProducts].reverse();
           setAllProducts(latestFirst);
           setDisplayProducts(latestFirst);
           localStorage.setItem('mo_fashion_products', JSON.stringify(latestFirst));
@@ -78,14 +91,8 @@ export default function Home() {
 
   const handleAddToCart = (product: any) => {
     const origPrice = Number(product.price) || 0;
-    let discPercent = Number(product.discount) || 0;
-    let sellingPrice = origPrice;
-
-    if (discPercent > 0) {
-      sellingPrice = origPrice - (origPrice * discPercent / 100);
-    } else if (product.discountPrice && Number(product.discountPrice) < origPrice) {
-      sellingPrice = Number(product.discountPrice);
-    }
+    const discPercent = Number(product.discount) || 0;
+    const sellingPrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
 
     const cartItem = {
       id: String(product._id || product.id),
@@ -148,7 +155,7 @@ export default function Home() {
             NEW ARRIVALS
           </h2>
           
-          {/* 🚀 মোট প্রসেসড প্রোডাক্টের সংখ্যা */}
+          {/* 🚀 মোট প্রোডাক্ট সংখ্যা কাউন্টার */}
           {!loading && displayProducts.length > 0 && (
             <p className="text-xs text-gray-400 font-medium tracking-widest uppercase mt-2">
               Showing <span className="text-[#D4AF37] font-bold">{displayProducts.length}</span> {displayProducts.length === 1 ? 'Product' : 'Products'} Available
@@ -175,16 +182,8 @@ export default function Home() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {displayProducts.map((product) => {
               const origPrice = Number(product.price) || 0;
-              let discPercent = Number(product.discount) || 0;
-              let sellingPrice = origPrice;
-
-              if (discPercent > 0) {
-                sellingPrice = origPrice - (origPrice * discPercent / 100);
-              } else if (product.discountPrice && Number(product.discountPrice) < origPrice) {
-                sellingPrice = Number(product.discountPrice);
-                discPercent = Math.round(((origPrice - sellingPrice) / origPrice) * 100);
-              }
-
+              const discPercent = Number(product.discount) || 0;
+              const sellingPrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
               const stockVal = Number(product.stock) || 0;
               
               const productImages = (product.images && product.images.length > 0 && !product.images[0].includes('No+Image')) 
@@ -194,7 +193,7 @@ export default function Home() {
               return (
                 <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/10 rounded-2xl p-4 text-center hover:border-[#D4AF37]/50 transition-all duration-500 group flex flex-col shadow-xl relative">
                   
-                  {/* Product Image Box with 2-Sec Auto-Slider */}
+                  {/* 🚀 Product Image Box with 2-Sec Auto-Slider */}
                   <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-xl mb-4 bg-[#111111] aspect-[4/5]">
                     {productImages.length > 0 ? (
                       productImages.map((img: string, idx: number) => (
@@ -218,7 +217,7 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* 🚀 Stock Status Badges (Top Right) */}
+                    {/* 🚀 Stock Badges (Top Right) */}
                     {stockVal <= 0 || product.status === 'Out of Stock' ? (
                       <span className="absolute top-3 right-3 bg-red-600/90 text-white text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
                         Sold Out
@@ -228,8 +227,8 @@ export default function Home() {
                         Few Left ({stockVal})
                       </span>
                     ) : (
-                      <span className="absolute top-3 right-3 bg-green-600/90 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
-                        In Stock ({stockVal})
+                      <span className="absolute top-3 right-3 bg-green-600/80 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
+                        In Stock
                       </span>
                     )}
                   </Link>
@@ -241,12 +240,12 @@ export default function Home() {
                     </h3>
                   </Link>
 
-                  {/* 🚀 Remaining Items Text */}
+                  {/* 🚀 Remaining Stock Highlight */}
                   <p className="text-[11px] text-gray-400 mb-3">
-                    {stockVal > 0 ? `${stockVal} items remaining` : <span className="text-red-400 font-bold">Currently unavailable</span>}
+                    {stockVal > 0 ? `${stockVal} items remaining in stock` : <span className="text-red-400 font-bold">Currently unavailable</span>}
                   </p>
                   
-                  {/* Price Section */}
+                  {/* 🚀 Price Section (Selling Price + Struck-through Original Price) */}
                   <div className="mb-5 flex items-center justify-center space-x-2 mt-auto">
                     <span className="text-[#D4AF37] font-bold text-xl">{safeSettings?.currency || '৳'} {sellingPrice.toFixed(2)}</span>
                     {discPercent > 0 && (
@@ -254,7 +253,6 @@ export default function Home() {
                     )}
                   </div>
                   
-                  {/* Add to Cart Button */}
                   <button 
                     onClick={() => handleAddToCart(product)}
                     disabled={stockVal <= 0 || product.status === 'Out of Stock'}
