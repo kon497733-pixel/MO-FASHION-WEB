@@ -25,28 +25,44 @@ export default function CategoriesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ক্যাটাগরি ও ক্লাউড ইমেজেস প্রসেস করার ফাংশন
-  const formatCategoryData = (catList: any[]) => {
+  // 🚀 ক্লাউড ও প্রোডাক্ট ডাটাবেস থেকে ১০০% স্মার্ট ক্যাটাগরি ছবি জেনারেটর
+  const processCategoryData = (catList: any[]) => {
     const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
 
     return catList.map((cat: any) => {
       // ওই ক্যাটাগরির কতটি প্রোডাক্ট আছে হিসাব করা
-      const count = savedProducts.filter(
-        (p: any) => p.category?.trim().toLowerCase() === cat.name?.trim().toLowerCase() && p.status !== 'Out of Stock'
-      ).length;
+      const matchedProducts = savedProducts.filter(
+        (p: any) => p.category?.trim().toLowerCase() === cat.name?.trim().toLowerCase()
+      );
+      const count = matchedProducts.filter((p: any) => p.status !== 'Out of Stock').length;
 
-      // 🚀 অ্যাডমিন প্যানেল থেকে আসা আসল ক্লাউড ছবিগুলো ধরা হচ্ছে
       let imagesArray: string[] = [];
 
-      if (Array.isArray(cat.images) && cat.images.length > 0) {
-        imagesArray = cat.images.filter((url: string) => url && url.trim() !== '');
+      // ১. অ্যাডমিন প্যানেলে আপলোড করা ক্যাটাগরির ছবি
+      if (Array.isArray(cat.images)) {
+        imagesArray = cat.images.filter((url: string) => url && url.trim() !== '' && !url.includes('placeholder'));
       } else if (cat.imageUrl && cat.imageUrl.trim() !== '') {
         imagesArray = [cat.imageUrl];
       }
 
-      // যদি একদম কোনো ছবিই না দেওয়া থাকে, তবে সুন্দর একটি ডিফল্ট কভার দেখাবে
+      // ২. 🚀 যদি ক্যাটাগরিতে ছবি না থাকে, তবে ওই ক্যাটাগরির প্রোডাক্টগুলোর ছবি নিয়ে স্লাইডার বানাবে!
+      if (imagesArray.length === 0 && matchedProducts.length > 0) {
+        matchedProducts.forEach((p: any) => {
+          if (p.images && p.images.length > 0) {
+            p.images.forEach((img: string) => {
+              if (img && !img.includes('placeholder') && !imagesArray.includes(img)) {
+                imagesArray.push(img);
+              }
+            });
+          } else if (p.imageUrl && !imagesArray.includes(p.imageUrl)) {
+            imagesArray.push(p.imageUrl);
+          }
+        });
+      }
+
+      // ৩. একদম কিছু না থাকলে প্রিমিয়াম ফ্যাশন কভার
       if (imagesArray.length === 0) {
-        imagesArray = ["https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=600&auto=format&fit=crop"];
+        imagesArray = ["https://images.unsplash.com/photo-1617137968427-85924c800a22?q=80&w=600&auto=format&fit=crop"];
       }
 
       return {
@@ -57,15 +73,15 @@ export default function CategoriesPage() {
     });
   };
 
-  // 🚀 সরাসরি ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম লাইভ সিঙ্ক
+  // 🚀 রিয়েল-টাইম ক্লাউড সিঙ্ক
   useEffect(() => {
-    // ১. লোকাল মেমোরি চেক (ইনস্ট্যান্ট লোডের জন্য)
+    // লোকাল মেমোরি থেকে সাথে সাথে ডাটা লোড
     const savedLocalCats = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
     if (savedLocalCats.length > 0) {
-      setCategories(formatCategoryData(savedLocalCats));
+      setCategories(processCategoryData(savedLocalCats));
     }
 
-    // ২. ফায়ারবেস ক্লাউড ডাটাবেস থেকে লাইভ লাইভ আপডেট
+    // ক্লাউড ফায়ারবেস লাইভ লিসেনার
     try {
       const colRef = collection(db, 'categories');
       const unsubscribe = onSnapshot(colRef, (snapshot) => {
@@ -74,11 +90,21 @@ export default function CategoriesPage() {
           cloudCats.push({ id: docSnap.id, ...docSnap.data() });
         });
 
-        if (cloudCats.length > 0) {
-          const formatted = formatCategoryData(cloudCats);
-          setCategories(formatted);
-          localStorage.setItem('mo_fashion_categories', JSON.stringify(cloudCats));
+        let baseCategories = cloudCats.length > 0 
+          ? cloudCats 
+          : JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
+
+        if (baseCategories.length === 0) {
+          baseCategories = [
+            { id: '1', name: "Men's Collection" },
+            { id: '2', name: "Women's Collection" },
+            { id: '3', name: "Accessories" },
+          ];
         }
+
+        const formatted = processCategoryData(baseCategories);
+        setCategories(formatted);
+        localStorage.setItem('mo_fashion_categories', JSON.stringify(formatted));
       });
 
       return () => unsubscribe();
@@ -145,7 +171,7 @@ export default function CategoriesPage() {
                   {/* Background Overlay */}
                   <div className="absolute inset-0 bg-black/60 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
                   
-                  {/* 🚀 ২ সেকেন্ডের অটোমেটিক স্লাইডার (অ্যাডমিনের আসল ছবি দিয়ে) */}
+                  {/* 🚀 ২ সেকেন্ডের ব্যাকগ্রাউন্ড অটোমেটিক স্লাইডার */}
                   {category.imagesArray && category.imagesArray.map((img: string, idx: number) => (
                     <img 
                       key={idx}
