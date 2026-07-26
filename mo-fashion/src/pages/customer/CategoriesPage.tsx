@@ -6,16 +6,7 @@ import { useSettingsStore } from '../../store/useSettingsStore';
 
 // 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
 import { db } from '../../firebase/config';
-import { collection, getDocs } from 'firebase/firestore';
-
-// ডিফল্ট ইমেজের লিংক
-const defaultImage = "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=600&auto=format&fit=crop";
-
-const categoryImages: Record<string, string> = {
-  "Men's Collection": "https://images.unsplash.com/photo-1617137968427-85924c800a22?q=80&w=600&auto=format&fit=crop",
-  "Women's Collection": "https://images.unsplash.com/photo-1539008835657-9e8e9680c956?q=80&w=600&auto=format&fit=crop",
-  "Accessories": "https://images.unsplash.com/photo-1611591437281-460bfbe1220a?q=80&w=600&auto=format&fit=crop",
-};
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export default function CategoriesPage() {
   const { settings } = useSettingsStore();
@@ -23,8 +14,8 @@ export default function CategoriesPage() {
 
   const [categories, setCategories] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে পরিবর্তন করার জন্য টাইমার স্টেট
+
+  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে পরিবর্তন করার জন্য টাইমার
   const [imageIndex, setImageIndex] = useState(0);
 
   useEffect(() => {
@@ -34,34 +25,28 @@ export default function CategoriesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ক্যাটাগরি প্রসেস করার হেলপার ফাংশন
-  const processCategories = (baseCategories: any[]) => {
+  // 🚀 ক্যাটাগরি ও ক্লাউড ইমেজেস প্রসেস করার ফাংশন
+  const formatCategoryData = (catList: any[]) => {
     const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
 
-    if (!baseCategories || baseCategories.length === 0) {
-      baseCategories = [
-        { id: 1, name: "Men's Collection" },
-        { id: 2, name: "Women's Collection" },
-        { id: 3, name: "Accessories" },
-      ];
-    }
+    return catList.map((cat: any) => {
+      // ওই ক্যাটাগরির কতটি প্রোডাক্ট আছে হিসাব করা
+      const count = savedProducts.filter(
+        (p: any) => p.category?.trim().toLowerCase() === cat.name?.trim().toLowerCase() && p.status !== 'Out of Stock'
+      ).length;
 
-    return baseCategories.map((cat: any) => {
-      const count = savedProducts.filter((p: any) => p.category === cat.name && p.status !== 'Out of Stock').length;
-      
+      // 🚀 অ্যাডমিন প্যানেল থেকে আসা আসল ক্লাউড ছবিগুলো ধরা হচ্ছে
       let imagesArray: string[] = [];
+
       if (Array.isArray(cat.images) && cat.images.length > 0) {
         imagesArray = cat.images.filter((url: string) => url && url.trim() !== '');
-      } else if (cat.image && typeof cat.image === 'string' && cat.image.trim() !== '') {
-        imagesArray = cat.image.split(/,|\s+/).map((url: string) => url.trim()).filter((url: string) => url.startsWith('http') || url.startsWith('data:image'));
+      } else if (cat.imageUrl && cat.imageUrl.trim() !== '') {
+        imagesArray = [cat.imageUrl];
       }
 
+      // যদি একদম কোনো ছবিই না দেওয়া থাকে, তবে সুন্দর একটি ডিফল্ট কভার দেখাবে
       if (imagesArray.length === 0) {
-        if (categoryImages[cat.name]) {
-          imagesArray.push(categoryImages[cat.name]);
-        } else {
-          imagesArray.push(defaultImage);
-        }
+        imagesArray = ["https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=600&auto=format&fit=crop"];
       }
 
       return {
@@ -72,35 +57,34 @@ export default function CategoriesPage() {
     });
   };
 
-  // 🚀 ০.১ সেকেন্ডে ইনস্ট্যান্ট ক্যাটাগরি লোড লজিক
+  // 🚀 সরাসরি ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম লাইভ সিঙ্ক
   useEffect(() => {
-    // ১. ব্রাউজারের লোকাল মেমোরি থেকে সাথে সাথে ডাটা লোড করা (জিরো লোডিং ওয়েট)
-    const savedCategories = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
-    const initialEnriched = processCategories(savedCategories);
-    setCategories(initialEnriched);
+    // ১. লোকাল মেমোরি চেক (ইনস্ট্যান্ট লোডের জন্য)
+    const savedLocalCats = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
+    if (savedLocalCats.length > 0) {
+      setCategories(formatCategoryData(savedLocalCats));
+    }
 
-    // ২. ব্যাকগ্রাউন্ডে ক্লাউড ডাটাবেস থেকে ডাটা সিঙ্ক করা
-    const loadCloudCategories = async () => {
-      try {
-        const colRef = collection(db, 'categories');
-        const snapshot = await getDocs(colRef);
-        
+    // ২. ফায়ারবেস ক্লাউড ডাটাবেস থেকে লাইভ লাইভ আপডেট
+    try {
+      const colRef = collection(db, 'categories');
+      const unsubscribe = onSnapshot(colRef, (snapshot) => {
         const cloudCats: any[] = [];
         snapshot.forEach((docSnap) => {
           cloudCats.push({ id: docSnap.id, ...docSnap.data() });
         });
 
         if (cloudCats.length > 0) {
-          const enriched = processCategories(cloudCats);
-          setCategories(enriched);
+          const formatted = formatCategoryData(cloudCats);
+          setCategories(formatted);
           localStorage.setItem('mo_fashion_categories', JSON.stringify(cloudCats));
         }
-      } catch (e) {
-        console.warn("Silent cloud category fetch skipped.");
-      }
-    };
+      });
 
-    loadCloudCategories();
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn("Firestore Category Sync Error:", e);
+    }
   }, []);
 
   // সার্চ ফিল্টার
@@ -116,7 +100,7 @@ export default function CategoriesPage() {
 
       <div className="container mx-auto px-4">
         
-        {/* Page Header */}
+        {/* Header */}
         <div className="text-center mb-10 mt-8">
           <h1 className="text-4xl md:text-5xl font-serif font-bold text-[#D4AF37] mb-4 tracking-wider uppercase flex items-center justify-center">
             <Layers className="mr-4" size={40} />
@@ -127,7 +111,7 @@ export default function CategoriesPage() {
           </p>
         </div>
 
-        {/* Category Search Bar */}
+        {/* Search Bar */}
         <div className="max-w-xl mx-auto mb-16 relative group">
           <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
             <Search className="text-gray-500 group-focus-within:text-[#D4AF37] transition-colors" size={20} />
@@ -142,7 +126,6 @@ export default function CategoriesPage() {
         </div>
 
         {filteredCategories.length === 0 ? (
-          /* Empty State */
           <div className="text-center py-20 bg-[#1A1A1A] rounded-2xl border border-dashed border-gray-800 max-w-2xl mx-auto shadow-2xl">
             <ShoppingBag size={64} className="mx-auto text-gray-600 mb-6" />
             <h2 className="text-2xl font-serif font-bold text-white mb-4">No Collections Found</h2>
@@ -154,7 +137,6 @@ export default function CategoriesPage() {
             </Link>
           </div>
         ) : (
-          /* Categories Grid */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-10">
             {filteredCategories.map((category, index) => (
               <Link to={`/category/${encodeURIComponent(category.name)}`} key={index} className="group">
@@ -163,7 +145,7 @@ export default function CategoriesPage() {
                   {/* Background Overlay */}
                   <div className="absolute inset-0 bg-black/60 group-hover:bg-black/30 transition-colors duration-500 z-10"></div>
                   
-                  {/* 🚀 ২ সেকেন্ডের ব্যাকগ্রাউন্ড অটো স্লাইডার */}
+                  {/* 🚀 ২ সেকেন্ডের অটোমেটিক স্লাইডার (অ্যাডমিনের আসল ছবি দিয়ে) */}
                   {category.imagesArray && category.imagesArray.map((img: string, idx: number) => (
                     <img 
                       key={idx}
