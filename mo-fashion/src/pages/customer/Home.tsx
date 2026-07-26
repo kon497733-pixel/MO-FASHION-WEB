@@ -1,12 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Image as ImageIcon, Search, Tag } from 'lucide-react';
+import { ShoppingBag, Image as ImageIcon, Search, Tag, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// 🚀 ফায়ারবেস ক্লাউড কানেকশন
-import { db } from '../../firebase/config';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useCartStore } from '../../store/useCartStore';
 
@@ -15,69 +12,46 @@ export default function Home() {
   const safeSettings = settings as any;
   const addToCart = useCartStore((state) => state.addToCart);
 
+  // 🚀 আপনার অ্যাডমিন প্যানেলের ঠিক সেই একই লাইভ মঙ্গোডিবি এপিআই লিঙ্ক
+  const API_URL = 'https://mo-fashion-api-mehedi.onrender.com/api/products';
+
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [displayProducts, setDisplayProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 🚀 ১০০% বুলেটপ্রুফ প্রোডাক্ট ফেচিং (কোনো ফিল্টার ছাড়াই সব ডাটা আনবে)
-  useEffect(() => {
-    let isMounted = true;
-
-    // ১. প্রথমে মেমোরিতে থাকা ডাটা সাথে সাথে স্ক্রিনে দেখানো (যাতে জিরো লোডিং হয়)
-    const savedLocal = localStorage.getItem('mo_fashion_products');
-    if (savedLocal) {
-      try {
-        const parsed = JSON.parse(savedLocal);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+  // 🚀 ১. সরাসরি রেন্ডার ক্লাউড ব্যাকএন্ড (MongoDB) থেকে প্রোডাক্ট ফেচ করা
+  const fetchLiveProducts = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(API_URL);
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          // নতুন প্রোডাক্ট সবার আগে দেখানোর জন্য রিভার্স করা
+          const latestFirst = [...data].reverse();
+          setAllProducts(latestFirst);
+          setDisplayProducts(latestFirst);
+          localStorage.setItem('mo_fashion_products', JSON.stringify(latestFirst));
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching live products on Home:", error);
+      const savedLocal = localStorage.getItem('mo_fashion_products');
+      if (savedLocal) {
+        try {
+          const parsed = JSON.parse(savedLocal);
           setAllProducts(parsed);
           setDisplayProducts(parsed);
-          setLoading(false);
-        }
-      } catch (e) {}
-    }
-
-    // ২. ফায়ারবেস ক্লাউড ডাটাবেস থেকে সরাসরি লাইভ ডাটা আনা
-    try {
-      const colRef = collection(db, 'products');
-
-      // রিয়েল-টাইম লিসেনার (কোনো জটিল orderBy ছাড়া, যাতে ফায়ারবেস কোনো এরর না দেয়)
-      const unsubscribe = onSnapshot(colRef, (snapshot) => {
-        if (!isMounted) return;
-
-        const cloudProds: any[] = [];
-        snapshot.forEach((docSnap) => {
-          cloudProds.push({
-            id: docSnap.id,
-            _id: docSnap.id,
-            ...docSnap.data()
-          });
-        });
-
-        if (cloudProds.length > 0) {
-          // নতুন প্রোডাক্ট আগে দেখানোর জন্য ম্যানুয়ালি রিভার্স করা
-          cloudProds.reverse();
-          setAllProducts(cloudProds);
-          setDisplayProducts(cloudProds);
-          localStorage.setItem('mo_fashion_products', JSON.stringify(cloudProds));
-        } else if (!savedLocal) {
-          setAllProducts([]);
-          setDisplayProducts([]);
-        }
-        setLoading(false);
-      }, (err) => {
-        console.warn("Firestore snapshot error, trying fallback fetch:", err);
-        setLoading(false);
-      });
-
-      return () => {
-        isMounted = false;
-        unsubscribe();
-      };
-    } catch (error) {
-      console.error("Firestore Connection Failed:", error);
+        } catch (e) {}
+      }
+    } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchLiveProducts();
   }, []);
 
   // সার্চ ফিল্টার লজিক
@@ -99,7 +73,7 @@ export default function Home() {
     const sellingPrice = discount > 0 ? originalPrice - (originalPrice * discount / 100) : originalPrice;
 
     const cartItem = {
-      id: String(product.id || product._id),
+      id: String(product._id || product.id),
       name: product.name,
       price: sellingPrice,
       quantity: 1,
@@ -162,13 +136,16 @@ export default function Home() {
         </div>
 
         {loading ? (
-          <div className="text-center text-[#D4AF37] font-medium animate-pulse py-20 text-xl">Loading Product Collection...</div>
+          <div className="text-center text-[#D4AF37] font-medium animate-pulse py-20 text-xl flex items-center justify-center gap-3">
+            <RefreshCw size={24} className="animate-spin" />
+            <span>Connecting to Live Cloud Database...</span>
+          </div>
         ) : displayProducts.length === 0 ? (
           <div className="text-center py-24 bg-[#1A1A1A] rounded-3xl border border-dashed border-gray-800 max-w-3xl mx-auto">
             <ShoppingBag size={64} className="mx-auto text-gray-700 mb-6" />
             <h2 className="text-2xl font-serif font-bold text-white mb-2">No Products Available</h2>
             <p className="text-gray-500">
-              {searchQuery ? `No product matches your search "${searchQuery}".` : "Please add products from the Admin Panel."}
+              {searchQuery ? `No product matches your search "${searchQuery}".` : "Products will appear here once added in the Admin Panel."}
             </p>
           </div>
         ) : (
@@ -184,9 +161,9 @@ export default function Home() {
               }
 
               return (
-                <div key={product.id || product._id} className="bg-[#1A1A1A] border border-[#D4AF37]/10 rounded-2xl p-4 text-center hover:border-[#D4AF37]/50 transition-all duration-500 group flex flex-col shadow-xl relative">
+                <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/10 rounded-2xl p-4 text-center hover:border-[#D4AF37]/50 transition-all duration-500 group flex flex-col shadow-xl relative">
                   
-                  <Link to={`/product/${product.id || product._id}`} className="block relative overflow-hidden rounded-xl mb-5 bg-[#111111] aspect-[4/5]">
+                  <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-xl mb-5 bg-[#111111] aspect-[4/5]">
                     {displayImg ? (
                       <img src={displayImg} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                     ) : (
@@ -200,7 +177,7 @@ export default function Home() {
                     )}
                   </Link>
                   
-                  <Link to={`/product/${product.id || product._id}`} className="mt-auto">
+                  <Link to={`/product/${product._id || product.id}`} className="mt-auto">
                     <h3 className="font-bold text-white mb-2 hover:text-[#D4AF37] transition-colors line-clamp-2 px-2 uppercase tracking-tighter text-sm">
                       {product.name}
                     </h3>
