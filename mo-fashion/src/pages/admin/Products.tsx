@@ -10,7 +10,7 @@ export default function Products() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadIndex, setUploadIndex] = useState<number | null>(null);
 
-  // 🚀 আপনার লাইভ রেন্ডার মঙ্গোডিবি ব্যাকএন্ড এপিআই
+  // 🚀 লাইভ মঙ্গোডিবি এপিআই
   const API_URL = 'https://mo-fashion-api-mehedi.onrender.com/api/products';
 
   const [products, setProducts] = useState<any[]>([]);
@@ -23,15 +23,12 @@ export default function Products() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   
-  // 🚀 ফর্মে Discount (%) ফিল্ড
   const [formData, setFormData] = useState({
     _id: '', id: '', name: '', description: '', category: '',
-    price: '',         // অরিজিনাল প্রাইস
-    discount: '0',     // ডিসকাউন্ট পার্সেন্টেজ
-    stock: '', status: 'Active', images: [''],
+    price: '', discount: '0', stock: '', status: 'Active', images: [''],
   });
 
-  // 🚀 ১. ডাটাবেস থেকে প্রোডাক্ট লোড করা
+  // 🚀 ১. ডাটাবেস থেকে প্রোডাক্ট লোড এবং ডিসকাউন্ট এক্সট্র্যাক্ট করা
   const fetchProducts = async () => {
     try {
       setLoading(true);
@@ -39,8 +36,28 @@ export default function Products() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          setProducts(data);
-          localStorage.setItem('mo_fashion_products', JSON.stringify(data));
+          // 🚀 হিডেন ট্যাগ থেকে ডিসকাউন্ট রিকভার করা (যাতে রিফ্রেশ দিলে না মোছে)
+          const parsedProducts = data.map((p: any) => {
+            let extractedDiscount = Number(p.discount) || 0;
+            let cleanDesc = p.description || '';
+
+            if (p.description && p.description.includes('[DISCOUNT:')) {
+              const match = p.description.match(/\[DISCOUNT:(\d+)\]/);
+              if (match) {
+                extractedDiscount = Number(match[1]);
+                cleanDesc = p.description.replace(/\[DISCOUNT:\d+\]\s*/, '');
+              }
+            }
+
+            return {
+              ...p,
+              discount: extractedDiscount,
+              description: cleanDesc
+            };
+          });
+
+          setProducts(parsedProducts);
+          localStorage.setItem('mo_fashion_products', JSON.stringify(parsedProducts));
         }
       }
     } catch (error) {
@@ -140,7 +157,7 @@ export default function Products() {
     }
   };
 
-  // 🚀 ২. ডিসকাউন্টসহ সেভ করার ফিক্সড ফাংশন
+  // 🚀 ২. ১০০% পারফেক্ট সেভ লজিক (ডিসকাউন্ট আর কখনো মুছে যাবে না)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -154,13 +171,16 @@ export default function Products() {
     const discPercent = Number(formData.discount) || 0;
     const calcSalePrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
 
-    // 🚀 ডিসকাউন্ট ডাটাবেসে পারমানেন্ট সেভ করার পে-লোড
+    // 🚀 ডিসকাউন্ট ডাটাবেসে পারমানেন্ট রাখার জন্য হিডেন ট্যাগ দেওয়া হলো
+    const cleanDesc = formData.description?.replace(/\[DISCOUNT:\d+\]\s*/, '').trim() || 'Premium quality product';
+    const embeddedDesc = `[DISCOUNT:${discPercent}] ${cleanDesc}`;
+
     const productPayload = {
       name: formData.name.trim(),
-      description: formData.description?.trim() || 'Premium quality product',
-      price: origPrice,               // অরিজিনাল প্রাইজ
-      discount: discPercent,         // ডিসকাউন্ট %
-      discountPrice: calcSalePrice,    // সেলস প্রাইজ
+      description: embeddedDesc,     // 🚀 হিডেন ট্যাগসহ ডেসক্রিপশন সেভ হচ্ছে
+      price: origPrice,              // আসল দাম
+      discount: discPercent,        // ডিসকাউন্ট %
+      discountPrice: calcSalePrice,   // সেলস দাম
       stock: Number(formData.stock) || 0,
       status: Number(formData.stock) <= 0 ? 'Out of Stock' : (formData.status || 'Active'),
       category: formData.category || "Men's Collection",
@@ -169,7 +189,7 @@ export default function Products() {
     };
 
     setIsSaving(true);
-    const toastId = toast.loading("Saving product & discount to live database...");
+    const toastId = toast.loading("Saving product & discount to cloud database...");
 
     try {
       const url = modalMode === 'add' ? API_URL : `${API_URL}/${formData._id || formData.id}`;
@@ -285,7 +305,7 @@ export default function Products() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-400">{p.category}</td>
                       
-                      {/* 🚀 ৩. Price, Original Price, % OFF এবং Final Price ডিসপ্লে */}
+                      {/* 🚀 Price, Original Price, % OFF এবং Final Price ডিসপ্লে */}
                       <td className="px-6 py-4">
                         <div className="text-xs text-gray-400">
                           Regular: <span className={discPercent > 0 ? "line-through text-gray-500" : "text-white font-bold"}>৳{origPrice.toFixed(2)}</span>
@@ -371,6 +391,7 @@ export default function Products() {
                       />
                     </div>
 
+                    {/* 🚀 Discount (%) Box */}
                     <div>
                       <label className="block text-[#D4AF37] text-xs mb-1 font-bold flex items-center">
                         Discount (%) <Percent size={12} className="ml-1" />
