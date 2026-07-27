@@ -19,7 +19,7 @@ export default function CategoryProductsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে পরিবর্তন করার জন্য টাইমার
+  // ছবিগুলো প্রতি ২ সেকেন্ডে পরিবর্তন করার জন্য টাইমার
   const [imageIndex, setImageIndex] = useState(0);
 
   // URL থেকে ক্যাটাগরির আসল নাম নেওয়া
@@ -32,20 +32,21 @@ export default function CategoryProductsPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ১. সরাসরি লাইভ ক্লাউড ডাটাবেস (Render MongoDB) থেকে ক্যাটাগরির প্রোডাক্ট লোড করা
+  // 🚀 ১. সরাসরি লাইভ ক্লাউড ডাটাবেস থেকে ক্যাটাগরির প্রোডাক্ট লোড করা
   useEffect(() => {
     const fetchLiveCategoryProducts = async () => {
       setLoading(true);
+      const targetCat = categoryTitle.trim().toLowerCase(); // যেমন: "men's collection"
+
       try {
         const response = await fetch(API_URL);
         if (response.ok) {
           const data = await response.json();
           if (Array.isArray(data)) {
-            // ক্যাটাগরির নাম ম্যাচ করানোর লজিক
-            const targetCat = categoryTitle.trim().toLowerCase();
+            // 🚀 ১০০% Strict Matching: "Women's" এর ভেতর "Men's" আর মিক্স হবে না!
             const filtered = data.filter((product: any) => {
               const pCat = (product.category || '').trim().toLowerCase();
-              return pCat === targetCat || pCat.includes(targetCat) || targetCat.includes(pCat);
+              return pCat === targetCat; // একদম হুবহু মিললেই শুধু আনবে
             });
 
             setCategoryProducts(filtered.reverse());
@@ -56,10 +57,9 @@ export default function CategoryProductsPage() {
         console.error("Error fetching category products:", err);
         // লোকাল মেমোরি ফলব্যাক
         const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
-        const targetCat = categoryTitle.trim().toLowerCase();
         const filtered = savedProducts.filter((product: any) => {
           const pCat = (product.category || '').trim().toLowerCase();
-          return pCat === targetCat || pCat.includes(targetCat) || targetCat.includes(pCat);
+          return pCat === targetCat; // 🚀 Strict Matching here too
         });
         setCategoryProducts(filtered.reverse());
       } finally {
@@ -161,6 +161,7 @@ export default function CategoryProductsPage() {
                 const origPrice = Number(product.price) || 0;
                 const discPercent = Number(product.discount) || 0;
                 const sellingPrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
+                const stockVal = Number(product.stock) || 0;
 
                 const productImages = (product.images && product.images.length > 0 && !product.images[0].includes('No+Image')) 
                   ? product.images 
@@ -169,7 +170,7 @@ export default function CategoryProductsPage() {
                 return (
                   <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-xl p-4 text-center hover:border-[#D4AF37]/60 transition-all duration-300 group flex flex-col shadow-lg relative">
                     
-                    {/* Product Image Box with 2-Sec Auto-Slider */}
+                    {/* Product Image Box with Auto-Slider */}
                     <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-lg mb-5 bg-[#111111] aspect-[4/5]">
                       {productImages.length > 0 ? (
                         productImages.map((img: string, idx: number) => (
@@ -195,20 +196,25 @@ export default function CategoryProductsPage() {
                       )}
 
                       {/* Stock Status Badge */}
-                      {product.stock <= 0 || product.status === 'Out of Stock' ? (
+                      {stockVal <= 0 || product.status === 'Out of Stock' ? (
                         <span className="absolute top-3 right-3 bg-red-600/90 text-white text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">Sold Out</span>
-                      ) : product.stock <= 5 ? (
+                      ) : stockVal <= 5 ? (
                         <span className="absolute top-3 right-3 bg-yellow-500/90 text-black text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">Few Left</span>
                       ) : null}
                     </Link>
                     
                     {/* Product Title */}
                     <Link to={`/product/${product._id || product.id}`} className="mt-auto">
-                      <h3 className="font-bold text-white mb-2 hover:text-[#D4AF37] transition-colors line-clamp-2 cursor-pointer">
+                      <h3 className="font-bold text-white mb-1 hover:text-[#D4AF37] transition-colors line-clamp-1 cursor-pointer text-sm uppercase">
                         {product.name}
                       </h3>
                     </Link>
                     
+                    {/* 🚀 Remaining Stock Text */}
+                    <p className="text-[11px] text-gray-400 mb-3">
+                      {stockVal > 0 ? `${stockVal} items remaining in stock` : <span className="text-red-400 font-bold">Currently unavailable</span>}
+                    </p>
+
                     {/* Price Section */}
                     <div className="mb-5 flex items-center justify-center space-x-2">
                       <span className="text-[#D4AF37] font-bold text-xl">{safeSettings?.currency || '৳'} {sellingPrice.toFixed(2)}</span>
@@ -220,15 +226,15 @@ export default function CategoryProductsPage() {
                     {/* Add to Cart Button */}
                     <button 
                       onClick={(e) => handleAddToCart(product, e)}
-                      disabled={product.stock <= 0 || product.status === 'Out of Stock'}
-                      className={`w-full flex items-center justify-center space-x-2 border py-3 rounded-lg font-bold uppercase tracking-wider text-sm transition-all duration-300 ${
-                        product.stock <= 0 || product.status === 'Out of Stock'
+                      disabled={stockVal <= 0 || product.status === 'Out of Stock'}
+                      className={`w-full flex items-center justify-center space-x-2 border py-3 rounded-lg font-bold uppercase tracking-wider text-xs transition-all duration-300 ${
+                        stockVal <= 0 || product.status === 'Out of Stock'
                         ? 'bg-[#111111] text-gray-500 border-gray-700 cursor-not-allowed' 
                         : 'border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black shadow-[0_0_10px_rgba(212,175,55,0.1)]'
                       }`}
                     >
-                      <ShoppingBag size={18} />
-                      <span>{product.stock <= 0 || product.status === 'Out of Stock' ? 'OUT OF STOCK' : 'ADD TO CART'}</span>
+                      <ShoppingBag size={16} />
+                      <span>{stockVal <= 0 || product.status === 'Out of Stock' ? 'OUT OF STOCK' : 'ADD TO CART'}</span>
                     </button>
 
                   </div>
