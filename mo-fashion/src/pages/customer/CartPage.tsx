@@ -3,8 +3,12 @@ import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { Trash2, Minus, Plus, ArrowRight, ShoppingBag, Ticket, Image as ImageIcon, MapPin } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// 🚀 গ্লোবাল স্টোর এবং ফায়ারবেস ইমপোর্ট
 import { useCartStore } from '../../store/useCartStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
+import { db } from '../../firebase/config';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, appliedCoupon, applyCoupon, removeCoupon } = useCartStore();
@@ -15,17 +19,37 @@ export default function CartPage() {
   const [couponInput, setCouponInput] = useState('');
   const [liveSettings, setLiveSettings] = useState<any>(null);
   const [deliveryLocation, setDeliveryLocation] = useState('inside');
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
 
+  // 🚀 রিয়েল টাইমে ডাটাবেস থেকে প্রোডাক্ট এবং সেটিংস ফেচ করা
   useEffect(() => {
-    const savedProducts = localStorage.getItem('mo_fashion_products');
-    if (savedProducts) {
-      setDbProducts(JSON.parse(savedProducts));
-    }
+    const fetchData = async () => {
+      // ১. প্রোডাক্ট ফেচ (Render API থেকে)
+      try {
+        const prodRes = await fetch('https://mo-fashion-api-mehedi.onrender.com/api/products');
+        if (prodRes.ok) {
+          const prods = await prodRes.json();
+          setDbProducts(prods);
+        }
+      } catch (e) {
+        const localProds = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
+        setDbProducts(localProds);
+      }
 
-    const savedSettings = localStorage.getItem('mo_fashion_settings');
-    if (savedSettings) {
-      setLiveSettings(JSON.parse(savedSettings));
-    }
+      // ২. সেটিংস ফেচ (Firebase Cloud থেকে)
+      try {
+        const docRef = doc(db, 'settings', 'store_settings');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setLiveSettings(docSnap.data());
+        }
+      } catch (e) {
+        const localSettings = JSON.parse(localStorage.getItem('mo_fashion_settings') || '{}');
+        setLiveSettings(localSettings);
+      }
+    };
+
+    fetchData();
   }, []);
 
   useEffect(() => {
@@ -88,81 +112,102 @@ export default function CartPage() {
 
   const taxRate = activeSettings.taxRate !== undefined && activeSettings.taxRate !== '' ? Number(activeSettings.taxRate) : 0; 
   const taxAmount = (subtotalAfterProductDiscount * taxRate) / 100;
-
-  // 🚀 ১. প্রথমে কুপন ছাড়া টোটাল হিসাব করা
+  
   const totalBeforeCoupon = subtotalAfterProductDiscount + shipping + taxAmount;
 
-  // 🚀 ২. এবার কুপন ডিসকাউন্ট হিসাব করা (Grand Total এর উপর)
+  // 🚀 কুপন ডিসকাউন্ট হিসাব
   let couponDiscountAmount = 0;
   if (appliedCoupon) {
     if (appliedCoupon.discountType === 'percentage') {
-      // পার্সেন্টেজ হলে টোটালের উপর পার্সেন্টেজ হিসাব হবে
       couponDiscountAmount = (totalBeforeCoupon * appliedCoupon.discountValue) / 100;
     } else {
-      // ফিক্সড হলে সরাসরি টাকা মাইনাস হবে
       couponDiscountAmount = appliedCoupon.discountValue;
     }
     
-    // কুপন ডিসকাউন্ট যেন টোটালের চেয়ে বেশি না হয়
     if (couponDiscountAmount > totalBeforeCoupon) {
       couponDiscountAmount = totalBeforeCoupon;
     }
   }
-  
-  // 🚀 ৩. ফাইনাল Grand Total
+
   const grandTotal = Math.max(0, totalBeforeCoupon - couponDiscountAmount);
 
-  const handleApplyCoupon = () => {
+  // 🚀 লাইভ ক্লাউড ডাটাবেস থেকে কুপন চেক ও অ্যাপ্লাই করার লজিক
+  const handleApplyCoupon = async () => {
     if (!couponInput.trim()) {
       toast.error('Please enter a coupon code!');
       return;
     }
-    
-    const savedCoupons = JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
-    const validCoupon = savedCoupons.find((c: any) => c.code === couponInput.trim().toUpperCase());
 
-    if (!validCoupon) {
-      toast.error('Invalid coupon code!');
-      return;
+    setIsApplyingCoupon(true);
+    const toastId = toast.loading('Checking coupon validity...');
+
+    try {
+      // ফায়ারবেস ক্লাউড থেকে সরাসরি সব কুপন ফেচ করা
+      const querySnapshot = await getDocs(collection(db, 'coupons'));
+      const cloudCoupons: any[] = [];
+      querySnapshot.forEach((docSnap) => {
+        cloudCoupons.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      // কুপন খোঁজা
+      const validCoupon = cloudCoupons.find((c: any) => c.code === couponInput.trim().toUpperCase());
+
+      if (!validCoupon) {
+        toast.error('Invalid coupon code!', { id: toastId });
+        setIsApplyingCoupon(false);
+        return;
+      }
+
+      // 🚀 অ্যাকটিভ স্ট্যাটাস চেক
+      if (validCoupon.status !== 'Active') {
+        toast.error('This coupon has expired or is inactive!', { id: toastId });
+        setIsApplyingCoupon(false);
+        return;
+      }
+
+      // 🚀 লিমিট চেক (আপনার রিকোয়ারমেন্ট অনুযায়ী)
+      if (Number(validCoupon.used) >= Number(validCoupon.usageLimit)) {
+        toast.error('This coupon has reached its maximum usage limit!', { id: toastId });
+        setIsApplyingCoupon(false);
+        return;
+      }
+
+      // 🚀 ডেট চেক
+      const today = new Date().toISOString().split('T')[0];
+      if (validCoupon.expiry && validCoupon.expiry < today) {
+        toast.error('This coupon has expired!', { id: toastId });
+        setIsApplyingCoupon(false);
+        return;
+      }
+
+      let discountValue = 0;
+      let discountType: 'percentage' | 'fixed' = 'fixed';
+      const discountStr = String(validCoupon.discount || '').trim();
+
+      if (discountStr.includes('%')) {
+        discountValue = Number(discountStr.replace(/[^0-9.]/g, ''));
+        discountType = 'percentage';
+      } else {
+        discountValue = Number(discountStr.replace(/[^0-9.]/g, ''));
+        discountType = 'fixed';
+      }
+
+      applyCoupon({ 
+        code: validCoupon.code, 
+        discountValue: discountValue, 
+        discountType: discountType,
+        cloudId: validCoupon.id // চেকআউটে আপডেট করার জন্য ক্লাউড আইডি সেভ করা হলো
+      } as any);
+      
+      toast.success(`Coupon ${validCoupon.code} applied successfully!`, { id: toastId });
+      setCouponInput('');
+
+    } catch (error) {
+      console.error("Error applying coupon:", error);
+      toast.error('Failed to connect to coupon server!', { id: toastId });
+    } finally {
+      setIsApplyingCoupon(false);
     }
-
-    if (validCoupon.status !== 'Active') {
-      toast.error('This coupon has expired or is inactive!');
-      return;
-    }
-
-    if (Number(validCoupon.used) >= Number(validCoupon.usageLimit)) {
-      toast.error('This coupon has reached its maximum usage limit!');
-      return;
-    }
-
-    const today = new Date().toISOString().split('T')[0];
-    if (validCoupon.expiry && validCoupon.expiry < today) {
-      toast.error('This coupon has expired!');
-      return;
-    }
-
-    let discountValue = 0;
-    let discountType: 'percentage' | 'fixed' = 'fixed';
-    
-    const discountStr = String(validCoupon.discount || '').trim();
-
-    if (discountStr.includes('%')) {
-      discountValue = Number(discountStr.replace(/[^0-9.]/g, ''));
-      discountType = 'percentage';
-    } else {
-      discountValue = Number(discountStr.replace(/[^0-9.]/g, ''));
-      discountType = 'fixed';
-    }
-
-    applyCoupon({ 
-      code: validCoupon.code, 
-      discountValue: discountValue, 
-      discountType: discountType 
-    });
-    
-    toast.success(`Coupon ${validCoupon.code} applied successfully!`);
-    setCouponInput('');
   };
 
   return (
@@ -331,8 +376,7 @@ export default function CartPage() {
                     <span className="text-white font-medium">Total Before Discount</span>
                     <span className="text-white">{activeSettings.currency} {totalBeforeCoupon.toFixed(2)}</span>
                   </div>
-
-                  {/* 🚀 Applied Coupon Display */}
+                  
                   {appliedCoupon && (
                     <div className="flex justify-between items-center text-green-400 font-bold bg-green-500/10 p-3 rounded-lg border border-green-500/20 mt-2">
                       <div className="flex flex-col">
@@ -351,13 +395,11 @@ export default function CartPage() {
                   )}
                 </div>
 
-                {/* 🚀 Grand Total Display */}
                 <div className="border-t border-[#D4AF37]/30 pt-5 mb-8 flex justify-between items-end">
                   <span className="font-serif font-bold text-lg text-white">Grand Total</span>
                   <span className="font-bold text-3xl text-[#D4AF37]">{activeSettings.currency} {grandTotal.toFixed(2)}</span>
                 </div>
 
-                {/* Coupon Input */}
                 {!appliedCoupon && (
                   <div className="mb-6 relative">
                     <label className="block text-xs text-gray-400 uppercase tracking-widest mb-2">Have a Promo Code?</label>
@@ -371,9 +413,10 @@ export default function CartPage() {
                       />
                       <button 
                         onClick={handleApplyCoupon}
-                        className="bg-[#D4AF37]/10 border border-[#D4AF37] text-[#D4AF37] px-6 py-3 rounded-lg hover:bg-[#D4AF37] hover:text-black transition-colors font-bold uppercase tracking-wider"
+                        disabled={isApplyingCoupon}
+                        className="bg-[#D4AF37]/10 border border-[#D4AF37] text-[#D4AF37] px-6 py-3 rounded-lg hover:bg-[#D4AF37] hover:text-black transition-colors font-bold uppercase tracking-wider disabled:opacity-50"
                       >
-                        Apply
+                        {isApplyingCoupon ? '...' : 'Apply'}
                       </button>
                     </div>
                   </div>
