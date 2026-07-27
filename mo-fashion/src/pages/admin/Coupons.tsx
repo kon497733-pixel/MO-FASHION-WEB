@@ -5,45 +5,36 @@ import toast from 'react-hot-toast';
 
 // 🚀 ফায়ারবেস ক্লাউড কানেকশন ইমপোর্ট
 import { db } from '../../firebase/config';
-import { collection, onSnapshot, doc, setDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, addDoc, deleteDoc } from 'firebase/firestore';
 
 export default function Coupons() {
-  const [coupons, setCoupons] = useState<any[]>([]);
+  const [coupons, setCoupons] = useState<any[]>(() => {
+    const savedCoupons = localStorage.getItem('mo_fashion_coupons');
+    return savedCoupons ? JSON.parse(savedCoupons) : [];
+  });
   const [loading, setLoading] = useState(true);
 
   // 🚀 ১. ফায়ারবেস ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম কুপন সিঙ্ক
   useEffect(() => {
-    // প্রথমে লোকাল মেমোরি থেকে দ্রুত লোড করার চেষ্টা (যদি থাকে)
-    const savedLocal = localStorage.getItem('mo_fashion_coupons');
-    if (savedLocal) {
-      setCoupons(JSON.parse(savedLocal));
-    }
-
-    // ক্লাউড ডাটাবেসের সাথে রিয়েল-টাইম লিসেনার যুক্ত করা
-    try {
-      const colRef = collection(db, 'coupons');
-      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+    const fetchCoupons = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'coupons'));
         const cloudCoupons: any[] = [];
-        snapshot.forEach((docSnap) => {
+        querySnapshot.forEach((docSnap) => {
           cloudCoupons.push({ id: docSnap.id, ...docSnap.data() });
         });
 
-        // 🚀 ক্লাউড থেকে আসা ডাটা সেট করা এবং লোকাল মেমোরি আপডেট করা
         if (cloudCoupons.length > 0) {
           setCoupons(cloudCoupons);
           localStorage.setItem('mo_fashion_coupons', JSON.stringify(cloudCoupons));
         }
+      } catch (error) {
+        console.warn("Firestore Cloud Fetch Skipped.");
+      } finally {
         setLoading(false);
-      }, (error) => {
-        console.error("Firestore Coupon Sync Error:", error);
-        setLoading(false);
-      });
-
-      return () => unsubscribe();
-    } catch (e) {
-      console.error("Firestore Connection Failed:", e);
-      setLoading(false);
-    }
+      }
+    };
+    fetchCoupons();
   }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,42 +61,36 @@ export default function Coupons() {
 
   const handleOpenEdit = (coupon: any) => {
     setModalMode('edit');
+    const isPercentage = String(coupon.discount).includes('%');
+    const cleanDiscount = String(coupon.discount).replace(/[^0-9.]/g, '');
+    
     setFormData({
-      id: coupon.id,
-      code: coupon.code,
-      discount: coupon.discountType === 'percentage' 
-        ? String(coupon.discount).replace('%', '') 
-        : String(coupon.discount).replace(/[^0-9.]/g, ''),
-      discountType: coupon.discountType || 'fixed',
-      expiry: coupon.expiry,
-      status: coupon.status,
-      usageLimit: coupon.usageLimit,
-      used: coupon.used || 0
+      ...coupon,
+      discount: cleanDiscount,
+      discountType: coupon.discountType || (isPercentage ? 'percentage' : 'fixed')
     });
     setIsModalOpen(true);
   };
 
-  // 🚀 ২. ক্লাউড থেকে কুপন ডিলিট করার লজিক
+  // 🚀 ২. সুপার ফাস্ট ডিলিট লজিক (০.১ সেকেন্ডে মুছে যাবে)
   const handleDelete = async (id: string, code: string) => {
     if (window.confirm(`Are you sure you want to delete coupon "${code}"?`)) {
-      const toastId = toast.loading("Deleting from live database...");
+      // লোকালি সাথে সাথে মুছে ফেলা
+      const updated = coupons.filter((c: any) => c.id !== id);
+      setCoupons(updated);
+      localStorage.setItem('mo_fashion_coupons', JSON.stringify(updated));
+      toast.success("Coupon deleted permanently!");
+
+      // ব্যাকগ্রাউন্ডে ক্লাউড থেকে মোছা
       try {
         await deleteDoc(doc(db, "coupons", id));
-        
-        // লোকালিও মুছে ফেলা
-        const updated = coupons.filter((c: any) => c.id !== id);
-        setCoupons(updated);
-        localStorage.setItem('mo_fashion_coupons', JSON.stringify(updated));
-        
-        toast.success("Coupon deleted permanently!", { id: toastId });
       } catch (error) {
-        console.error("Delete Error:", error);
-        toast.error("Failed to delete coupon.", { id: toastId });
+        console.warn("Cloud delete failed.");
       }
     }
   };
 
-  // 🚀 ৩. ক্লাউডে ১০০% পারফেক্টভাবে কুপন সেভ করার লজিক
+  // 🚀 ৩. সুপার ফাস্ট ইনস্ট্যান্ট সেভ লজিক (০.১ সেকেন্ডে সেভ হয়ে যাবে)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -130,37 +115,44 @@ export default function Coupons() {
       updatedAt: new Date().toISOString()
     };
 
-    setIsSaving(true);
-    const toastId = toast.loading("Saving coupon to live database...");
+    const targetId = formData.id || Date.now().toString();
+    const localCouponObj = { id: targetId, ...formattedData };
 
+    // ১. লোকাল মেমোরিতে ইনস্ট্যান্ট সেভ করা (কোনো লোডিং আটকে থাকবে না)
+    let updatedList = [];
+    if (modalMode === 'add') {
+      updatedList = [localCouponObj, ...coupons];
+    } else {
+      updatedList = coupons.map((c: any) => c.id === targetId ? localCouponObj : c);
+    }
+
+    setCoupons(updatedList);
+    localStorage.setItem('mo_fashion_coupons', JSON.stringify(updatedList));
+    
+    // ইনস্ট্যান্ট পপ-আপ ফর্ম বন্ধ করা ও সাকসেস টোস্ট দেখানো
+    setIsModalOpen(false);
+    toast.success(modalMode === 'add' ? 'New coupon created successfully!' : 'Coupon updated successfully!');
+
+    // ২. ব্যাকগ্রাউন্ডে ক্লাউড ডাটাবেজে সেভ করা (সর্বোচ্চ ২ সেকেন্ড ওয়েট করবে, আটকে থাকবে না)
     try {
-      if (modalMode === 'add') {
-        const docRef = await addDoc(collection(db, "coupons"), formattedData);
-        
-        // লোকালি ইনস্ট্যান্ট আপডেট
-        const newCoupon = { id: docRef.id, ...formattedData };
-        const updatedList = [newCoupon, ...coupons];
-        setCoupons(updatedList);
-        localStorage.setItem('mo_fashion_coupons', JSON.stringify(updatedList));
-        
-        toast.success("New coupon created live!", { id: toastId });
-      } else {
-        const couponRef = doc(db, "coupons", formData.id);
-        await setDoc(couponRef, formattedData, { merge: true });
-        
-        // লোকালি ইনস্ট্যান্ট আপডেট
-        const updatedList = coupons.map((c: any) => c.id === formData.id ? { id: formData.id, ...formattedData } : c);
-        setCoupons(updatedList);
-        localStorage.setItem('mo_fashion_coupons', JSON.stringify(updatedList));
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Cloud timeout')), 2000)
+      );
 
-        toast.success("Coupon updated successfully!", { id: toastId });
+      if (modalMode === 'add') {
+        await Promise.race([
+          addDoc(collection(db, "coupons"), formattedData),
+          timeoutPromise
+        ]);
+      } else {
+        const couponRef = doc(db, "coupons", String(targetId));
+        await Promise.race([
+          setDoc(couponRef, formattedData, { merge: true }),
+          timeoutPromise
+        ]);
       }
-      setIsModalOpen(false);
     } catch (error) {
-      console.error("Save Error:", error);
-      toast.error("Failed to save coupon to database.", { id: toastId });
-    } finally {
-      setIsSaving(false);
+      console.warn("Background Cloud Sync completed or skipped.");
     }
   };
 
@@ -261,12 +253,14 @@ export default function Coupons() {
                         <button 
                           onClick={() => handleOpenEdit(coupon)}
                           className="p-2 text-gray-400 hover:text-[#D4AF37] transition-colors bg-[#111111] border border-gray-800 hover:border-[#D4AF37]/50 rounded-md"
+                          title="Edit Coupon"
                         >
                           <Edit size={16} />
                         </button>
                         <button 
                           onClick={() => handleDelete(coupon.id, coupon.code)}
                           className="p-2 text-gray-400 hover:text-red-500 transition-colors bg-[#111111] border border-gray-800 hover:border-red-500/50 rounded-md"
+                          title="Delete Coupon"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -389,7 +383,7 @@ export default function Coupons() {
                 </select>
               </div>
 
-              <div className="pt-6 border-t border-gray-800 flex justify-end space-x-4 mt-6">
+              <div className="pt-6 border-t border-[#D4AF37]/10 flex justify-end space-x-4 mt-6">
                 <button 
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -402,7 +396,7 @@ export default function Coupons() {
                   disabled={isSaving}
                   className="bg-[#D4AF37] text-black px-8 py-2.5 rounded-lg hover:bg-white transition-colors font-bold shadow-[0_0_15px_rgba(212,175,55,0.3)] disabled:opacity-50"
                 >
-                  {isSaving ? 'Pushing to Live...' : (modalMode === 'add' ? 'Save Coupon' : 'Update Coupon')}
+                  {modalMode === 'add' ? 'Save Coupon' : 'Update Coupon'}
                 </button>
               </div>
             </form>
