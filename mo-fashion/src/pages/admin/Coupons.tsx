@@ -3,62 +3,110 @@ import { Plus, Search, Edit, Trash2, X, Ticket, Percent, DollarSign } from 'luci
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
 
-export default function Coupons() {
-  const [coupons, setCoupons] = useState<any[]>(() => {
-    const savedCoupons = localStorage.getItem('mo_fashion_coupons');
-    if (savedCoupons) {
-      return JSON.parse(savedCoupons);
-    }
-    return [];
-  });
+// 🚀 ফায়ারবেস ক্লাউড কানেকশন ইমপোর্ট
+import { db } from '../../firebase/config';
+import { collection, onSnapshot, doc, setDoc, addDoc, deleteDoc } from 'firebase/firestore';
 
+export default function Coupons() {
+  const [coupons, setCoupons] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // 🚀 ১. ফায়ারবেস ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম কুপন সিঙ্ক
   useEffect(() => {
-    localStorage.setItem('mo_fashion_coupons', JSON.stringify(coupons));
-  }, [coupons]);
+    // প্রথমে লোকাল মেমোরি থেকে দ্রুত লোড করার চেষ্টা (যদি থাকে)
+    const savedLocal = localStorage.getItem('mo_fashion_coupons');
+    if (savedLocal) {
+      setCoupons(JSON.parse(savedLocal));
+    }
+
+    // ক্লাউড ডাটাবেসের সাথে রিয়েল-টাইম লিসেনার যুক্ত করা
+    try {
+      const colRef = collection(db, 'coupons');
+      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+        const cloudCoupons: any[] = [];
+        snapshot.forEach((docSnap) => {
+          cloudCoupons.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        // 🚀 ক্লাউড থেকে আসা ডাটা সেট করা এবং লোকাল মেমোরি আপডেট করা
+        if (cloudCoupons.length > 0) {
+          setCoupons(cloudCoupons);
+          localStorage.setItem('mo_fashion_coupons', JSON.stringify(cloudCoupons));
+        }
+        setLoading(false);
+      }, (error) => {
+        console.error("Firestore Coupon Sync Error:", error);
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
+    } catch (e) {
+      console.error("Firestore Connection Failed:", e);
+      setLoading(false);
+    }
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
+  const [isSaving, setIsSaving] = useState(false);
   
-  // 🚀 ফর্মে discountType যুক্ত করা হলো
   const [formData, setFormData] = useState({
-    id: 0,
+    id: '',
     code: '',
     discount: '',
-    discountType: 'percentage', // ডিফল্ট পার্সেন্টেজ
+    discountType: 'percentage',
     expiry: '',
     status: 'Active',
     usageLimit: 0,
+    used: 0
   });
 
   const handleOpenAdd = () => {
     setModalMode('add');
-    setFormData({ id: Date.now(), code: '', discount: '', discountType: 'percentage', expiry: '', status: 'Active', usageLimit: 100 });
+    setFormData({ id: '', code: '', discount: '', discountType: 'percentage', expiry: '', status: 'Active', usageLimit: 100, used: 0 });
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (coupon: any) => {
     setModalMode('edit');
-    // পুরোনো কুপনে টাইপ না থাকলে পার্সেন্টেজ চেক করে টাইপ বসিয়ে দেওয়া হচ্ছে
-    const isPercentage = String(coupon.discount).includes('%');
-    const cleanDiscount = String(coupon.discount).replace(/[^0-9.]/g, '');
-    
     setFormData({
-      ...coupon,
-      discount: cleanDiscount,
-      discountType: coupon.discountType || (isPercentage ? 'percentage' : 'fixed')
+      id: coupon.id,
+      code: coupon.code,
+      discount: coupon.discountType === 'percentage' 
+        ? String(coupon.discount).replace('%', '') 
+        : String(coupon.discount).replace(/[^0-9.]/g, ''),
+      discountType: coupon.discountType || 'fixed',
+      expiry: coupon.expiry,
+      status: coupon.status,
+      usageLimit: coupon.usageLimit,
+      used: coupon.used || 0
     });
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: number) => {
-    if (window.confirm("Are you sure you want to delete this coupon?")) {
-      setCoupons(coupons.filter((c: any) => c.id !== id));
-      toast.success("Coupon deleted successfully!");
+  // 🚀 ২. ক্লাউড থেকে কুপন ডিলিট করার লজিক
+  const handleDelete = async (id: string, code: string) => {
+    if (window.confirm(`Are you sure you want to delete coupon "${code}"?`)) {
+      const toastId = toast.loading("Deleting from live database...");
+      try {
+        await deleteDoc(doc(db, "coupons", id));
+        
+        // লোকালিও মুছে ফেলা
+        const updated = coupons.filter((c: any) => c.id !== id);
+        setCoupons(updated);
+        localStorage.setItem('mo_fashion_coupons', JSON.stringify(updated));
+        
+        toast.success("Coupon deleted permanently!", { id: toastId });
+      } catch (error) {
+        console.error("Delete Error:", error);
+        toast.error("Failed to delete coupon.", { id: toastId });
+      }
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // 🚀 ৩. ক্লাউডে ১০০% পারফেক্টভাবে কুপন সেভ করার লজিক
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.code || !formData.discount || !formData.expiry) {
@@ -66,29 +114,54 @@ export default function Coupons() {
       return;
     }
 
-    // 🚀 ডিসকাউন্টের ভ্যালুর সাথে % বা ৳ যুক্ত করে সেভ করা হচ্ছে
     const formattedDiscountValue = formData.discountType === 'percentage' 
       ? `${formData.discount}%` 
       : `৳${formData.discount}`;
 
     const formattedData = { 
-      ...formData, 
-      code: formData.code.toUpperCase(),
-      discount: formattedDiscountValue, // ডিসপ্লে করার জন্য
-      discountValue: Number(formData.discount), // কার্ট পেজে হিসাব করার জন্য
-      discountType: formData.discountType, // কার্ট পেজে হিসাব করার জন্য
-      used: modalMode === 'add' ? 0 : (coupons.find((c: any) => c.id === formData.id)?.used || 0)
+      code: formData.code.toUpperCase().trim(),
+      discount: formattedDiscountValue,
+      discountValue: Number(formData.discount),
+      discountType: formData.discountType,
+      expiry: formData.expiry,
+      status: formData.status,
+      usageLimit: Number(formData.usageLimit) || 1,
+      used: Number(formData.used) || 0,
+      updatedAt: new Date().toISOString()
     };
 
-    if (modalMode === 'add') {
-      setCoupons([formattedData, ...coupons]);
-      toast.success("New coupon created successfully!");
-    } else {
-      setCoupons(coupons.map((c: any) => c.id === formData.id ? formattedData : c));
-      toast.success("Coupon updated successfully!");
+    setIsSaving(true);
+    const toastId = toast.loading("Saving coupon to live database...");
+
+    try {
+      if (modalMode === 'add') {
+        const docRef = await addDoc(collection(db, "coupons"), formattedData);
+        
+        // লোকালি ইনস্ট্যান্ট আপডেট
+        const newCoupon = { id: docRef.id, ...formattedData };
+        const updatedList = [newCoupon, ...coupons];
+        setCoupons(updatedList);
+        localStorage.setItem('mo_fashion_coupons', JSON.stringify(updatedList));
+        
+        toast.success("New coupon created live!", { id: toastId });
+      } else {
+        const couponRef = doc(db, "coupons", formData.id);
+        await setDoc(couponRef, formattedData, { merge: true });
+        
+        // লোকালি ইনস্ট্যান্ট আপডেট
+        const updatedList = coupons.map((c: any) => c.id === formData.id ? { id: formData.id, ...formattedData } : c);
+        setCoupons(updatedList);
+        localStorage.setItem('mo_fashion_coupons', JSON.stringify(updatedList));
+
+        toast.success("Coupon updated successfully!", { id: toastId });
+      }
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Save Error:", error);
+      toast.error("Failed to save coupon to database.", { id: toastId });
+    } finally {
+      setIsSaving(false);
     }
-    
-    setIsModalOpen(false);
   };
 
   const filteredCoupons = coupons.filter((coupon: any) => 
@@ -105,7 +178,7 @@ export default function Coupons() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h1 className="text-2xl font-serif font-bold text-[#D4AF37] tracking-wider uppercase">Coupons Management</h1>
-          <p className="text-sm text-gray-400 mt-1">Create and manage discount codes for your customers</p>
+          <p className="text-sm text-gray-400 mt-1">Create and manage live discount codes for your customers</p>
         </div>
         <button 
           onClick={handleOpenAdd}
@@ -133,84 +206,84 @@ export default function Coupons() {
       {/* Coupons Table */}
       <div className="bg-[#1A1A1A] rounded-xl border border-[#D4AF37]/20 overflow-hidden shadow-lg">
         <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left whitespace-nowrap">
-            <thead className="bg-[#111111] border-b border-[#D4AF37]/20">
-              <tr>
-                <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Coupon Code</th>
-                <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Discount</th>
-                <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Usage</th>
-                <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Expiry Date</th>
-                <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Status</th>
-                <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800">
-              {filteredCoupons.map((coupon: any) => (
-                <tr key={coupon.id} className="hover:bg-[#111111]/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center space-x-3 text-[#D4AF37] font-bold tracking-wider">
-                      <Ticket size={18} className="text-gray-500" />
-                      <span>{coupon.code}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 font-bold text-white">
-                    {/* 🚀 ডিসকাউন্ট ব্যাজ */}
-                    <span className={`px-2 py-1 rounded text-xs ${coupon.discountType === 'percentage' ? 'bg-blue-500/10 text-blue-400' : 'bg-green-500/10 text-green-400'}`}>
-                      {coupon.discountType === 'percentage' ? `${coupon.discountValue}% OFF` : `৳${coupon.discountValue} OFF`}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm font-medium">
-                      <span className={coupon.used >= coupon.usageLimit ? 'text-red-500' : 'text-white'}>{coupon.used}</span>
-                      <span className="text-gray-500"> / {coupon.usageLimit}</span>
-                    </div>
-                    {/* Usage Progress Bar */}
-                    <div className="w-24 h-1.5 bg-[#111111] rounded-full mt-2 overflow-hidden border border-gray-800">
-                      <div 
-                        className={`h-full ${coupon.used >= coupon.usageLimit ? 'bg-red-500' : 'bg-[#D4AF37]'}`}
-                        style={{ width: `${Math.min((coupon.used / coupon.usageLimit) * 100, 100)}%` }}
-                      ></div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-gray-400 text-sm">{coupon.expiry}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border inline-block ${
-                      coupon.status === 'Active' 
-                      ? 'text-green-400 bg-green-500/10 border-green-500/20' 
-                      : 'text-red-400 bg-red-500/10 border-red-500/20'
-                    }`}>
-                      {coupon.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-end space-x-3">
-                      <button 
-                        onClick={() => handleOpenEdit(coupon)}
-                        className="p-2 text-gray-400 hover:text-[#D4AF37] transition-colors bg-[#111111] border border-gray-800 hover:border-[#D4AF37]/50 rounded-md"
-                        title="Edit Coupon"
-                      >
-                        <Edit size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(coupon.id)}
-                        className="p-2 text-gray-400 hover:text-red-500 transition-colors bg-[#111111] border border-gray-800 hover:border-red-500/50 rounded-md"
-                        title="Delete Coupon"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredCoupons.length === 0 && (
+          {loading ? (
+             <div className="text-center py-10 text-[#D4AF37] animate-pulse">Syncing Cloud Database...</div>
+          ) : (
+            <table className="w-full text-left whitespace-nowrap">
+              <thead className="bg-[#111111] border-b border-[#D4AF37]/20">
                 <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
-                    No coupons found. Click "Add New Coupon" to create one.
-                  </td>
+                  <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Coupon Code</th>
+                  <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Discount</th>
+                  <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Usage</th>
+                  <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Expiry Date</th>
+                  <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider">Status</th>
+                  <th className="px-6 py-4 font-bold text-gray-300 uppercase text-xs tracking-wider text-right">Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {filteredCoupons.map((coupon: any) => (
+                  <tr key={coupon.id} className="hover:bg-[#111111]/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-3 text-[#D4AF37] font-bold tracking-wider">
+                        <Ticket size={18} className="text-gray-500" />
+                        <span>{coupon.code}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 font-bold text-white">
+                      <span className={`px-2 py-1 rounded text-xs ${coupon.discountType === 'percentage' ? 'bg-blue-500/10 text-blue-400' : 'bg-green-500/10 text-green-400'}`}>
+                        {coupon.discountType === 'percentage' ? `${coupon.discountValue}% OFF` : `৳${coupon.discountValue} OFF`}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-medium">
+                        <span className={coupon.used >= coupon.usageLimit ? 'text-red-500' : 'text-white'}>{coupon.used}</span>
+                        <span className="text-gray-500"> / {coupon.usageLimit}</span>
+                      </div>
+                      <div className="w-24 h-1.5 bg-[#111111] rounded-full mt-2 overflow-hidden border border-gray-800">
+                        <div 
+                          className={`h-full ${coupon.used >= coupon.usageLimit ? 'bg-red-500' : 'bg-[#D4AF37]'}`}
+                          style={{ width: `${Math.min((coupon.used / coupon.usageLimit) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-gray-400 text-sm">{coupon.expiry}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold border inline-block ${
+                        coupon.status === 'Active' 
+                        ? 'text-green-400 bg-green-500/10 border-green-500/20' 
+                        : 'text-red-400 bg-red-500/10 border-red-500/20'
+                      }`}>
+                        {coupon.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end space-x-3">
+                        <button 
+                          onClick={() => handleOpenEdit(coupon)}
+                          className="p-2 text-gray-400 hover:text-[#D4AF37] transition-colors bg-[#111111] border border-gray-800 hover:border-[#D4AF37]/50 rounded-md"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(coupon.id, coupon.code)}
+                          className="p-2 text-gray-400 hover:text-red-500 transition-colors bg-[#111111] border border-gray-800 hover:border-red-500/50 rounded-md"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredCoupons.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
+                      No coupons found. Click "Add New Coupon" to create one.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -244,7 +317,6 @@ export default function Coupons() {
                 />
               </div>
 
-              {/* 🚀 Discount Type Selection */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-gray-300 text-sm mb-2 font-medium">Discount Type</label>
@@ -317,7 +389,7 @@ export default function Coupons() {
                 </select>
               </div>
 
-              <div className="pt-6 border-t border-[#D4AF37]/10 flex justify-end space-x-4">
+              <div className="pt-6 border-t border-gray-800 flex justify-end space-x-4 mt-6">
                 <button 
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -327,9 +399,10 @@ export default function Coupons() {
                 </button>
                 <button 
                   type="submit"
-                  className="bg-[#D4AF37] text-black px-8 py-2.5 rounded-lg hover:bg-white transition-colors font-bold shadow-[0_0_15px_rgba(212,175,55,0.3)]"
+                  disabled={isSaving}
+                  className="bg-[#D4AF37] text-black px-8 py-2.5 rounded-lg hover:bg-white transition-colors font-bold shadow-[0_0_15px_rgba(212,175,55,0.3)] disabled:opacity-50"
                 >
-                  {modalMode === 'add' ? 'Save Coupon' : 'Update Coupon'}
+                  {isSaving ? 'Pushing to Live...' : (modalMode === 'add' ? 'Save Coupon' : 'Update Coupon')}
                 </button>
               </div>
             </form>
