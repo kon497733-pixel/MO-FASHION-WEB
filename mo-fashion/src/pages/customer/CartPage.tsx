@@ -3,12 +3,12 @@ import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { Trash2, Minus, Plus, ArrowRight, ShoppingBag, Ticket, Image as ImageIcon, MapPin } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-// 🚀 গ্লোবাল স্টোর এবং ফায়ারবেস ইমপোর্ট
 import { useCartStore } from '../../store/useCartStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
+
+// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট (কুপন লাইভ চেক করার জন্য)
 import { db } from '../../firebase/config';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, appliedCoupon, applyCoupon, removeCoupon } = useCartStore();
@@ -21,7 +21,7 @@ export default function CartPage() {
   const [deliveryLocation, setDeliveryLocation] = useState('inside');
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
 
-  // 🚀 রিয়েল টাইমে ডাটাবেস থেকে প্রোডাক্ট এবং সেটিংস ফেচ করা
+  // রিয়েল টাইমে ডাটাবেস থেকে প্রোডাক্ট এবং সেটিংস ফেচ করা
   useEffect(() => {
     const fetchData = async () => {
       // ১. প্রোডাক্ট ফেচ (Render API থেকে)
@@ -36,15 +36,9 @@ export default function CartPage() {
         setDbProducts(localProds);
       }
 
-      // ২. সেটিংস ফেচ (Firebase Cloud থেকে)
-      try {
-        const docRef = doc(db, 'settings', 'store_settings');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setLiveSettings(docSnap.data());
-        }
-      } catch (e) {
-        const localSettings = JSON.parse(localStorage.getItem('mo_fashion_settings') || '{}');
+      // ২. সেটিংস ফেচ (Local Storage থেকে দ্রুত লোড)
+      const localSettings = JSON.parse(localStorage.getItem('mo_fashion_settings') || '{}');
+      if (Object.keys(localSettings).length > 0) {
         setLiveSettings(localSettings);
       }
     };
@@ -115,7 +109,7 @@ export default function CartPage() {
   
   const totalBeforeCoupon = subtotalAfterProductDiscount + shipping + taxAmount;
 
-  // 🚀 কুপন ডিসকাউন্ট হিসাব
+  // কুপন ডিসকাউন্ট হিসাব
   let couponDiscountAmount = 0;
   if (appliedCoupon) {
     if (appliedCoupon.discountType === 'percentage') {
@@ -131,7 +125,7 @@ export default function CartPage() {
 
   const grandTotal = Math.max(0, totalBeforeCoupon - couponDiscountAmount);
 
-  // 🚀 লাইভ ক্লাউড ডাটাবেস থেকে কুপন চেক ও অ্যাপ্লাই করার লজিক
+  // 🚀 লাইভ ক্লাউড ডাটাবেস থেকে কুপন চেক ও অ্যাপ্লাই করার লজিক (যেকোনো ডিভাইসের জন্য)
   const handleApplyCoupon = async () => {
     if (!couponInput.trim()) {
       toast.error('Please enter a coupon code!');
@@ -142,14 +136,14 @@ export default function CartPage() {
     const toastId = toast.loading('Checking coupon validity...');
 
     try {
-      // ফায়ারবেস ক্লাউড থেকে সরাসরি সব কুপন ফেচ করা
+      // 🚀 ১. ফায়ারবেস ক্লাউড থেকে সরাসরি সব কুপন ফেচ করা
       const querySnapshot = await getDocs(collection(db, 'coupons'));
       const cloudCoupons: any[] = [];
       querySnapshot.forEach((docSnap) => {
         cloudCoupons.push({ id: docSnap.id, ...docSnap.data() });
       });
 
-      // কুপন খোঁজা
+      // ২. কুপন খোঁজা
       const validCoupon = cloudCoupons.find((c: any) => c.code === couponInput.trim().toUpperCase());
 
       if (!validCoupon) {
@@ -158,21 +152,21 @@ export default function CartPage() {
         return;
       }
 
-      // 🚀 অ্যাকটিভ স্ট্যাটাস চেক
+      // ৩. অ্যাকটিভ স্ট্যাটাস চেক
       if (validCoupon.status !== 'Active') {
         toast.error('This coupon has expired or is inactive!', { id: toastId });
         setIsApplyingCoupon(false);
         return;
       }
 
-      // 🚀 লিমিট চেক (আপনার রিকোয়ারমেন্ট অনুযায়ী)
+      // ৪. লিমিট চেক
       if (Number(validCoupon.used) >= Number(validCoupon.usageLimit)) {
         toast.error('This coupon has reached its maximum usage limit!', { id: toastId });
         setIsApplyingCoupon(false);
         return;
       }
 
-      // 🚀 ডেট চেক
+      // ৫. ডেট চেক
       const today = new Date().toISOString().split('T')[0];
       if (validCoupon.expiry && validCoupon.expiry < today) {
         toast.error('This coupon has expired!', { id: toastId });
@@ -192,19 +186,19 @@ export default function CartPage() {
         discountType = 'fixed';
       }
 
+      // 🚀 গ্লোবাল স্টোরে কুপন সেভ করা
       applyCoupon({ 
         code: validCoupon.code, 
         discountValue: discountValue, 
-        discountType: discountType,
-        cloudId: validCoupon.id // চেকআউটে আপডেট করার জন্য ক্লাউড আইডি সেভ করা হলো
-      } as any);
+        discountType: discountType 
+      });
       
       toast.success(`Coupon ${validCoupon.code} applied successfully!`, { id: toastId });
       setCouponInput('');
 
     } catch (error) {
       console.error("Error applying coupon:", error);
-      toast.error('Failed to connect to coupon server!', { id: toastId });
+      toast.error('Failed to connect to cloud database!', { id: toastId });
     } finally {
       setIsApplyingCoupon(false);
     }
@@ -377,6 +371,7 @@ export default function CartPage() {
                     <span className="text-white">{activeSettings.currency} {totalBeforeCoupon.toFixed(2)}</span>
                   </div>
                   
+                  {/* 🚀 Applied Coupon Display */}
                   {appliedCoupon && (
                     <div className="flex justify-between items-center text-green-400 font-bold bg-green-500/10 p-3 rounded-lg border border-green-500/20 mt-2">
                       <div className="flex flex-col">
@@ -400,6 +395,7 @@ export default function CartPage() {
                   <span className="font-bold text-3xl text-[#D4AF37]">{activeSettings.currency} {grandTotal.toFixed(2)}</span>
                 </div>
 
+                {/* 🚀 Coupon Input Area */}
                 {!appliedCoupon && (
                   <div className="mb-6 relative">
                     <label className="block text-xs text-gray-400 uppercase tracking-widest mb-2">Have a Promo Code?</label>
@@ -422,6 +418,7 @@ export default function CartPage() {
                   </div>
                 )}
 
+                {/* Checkout Button */}
                 <Link to="/checkout">
                   <button className="w-full bg-[#D4AF37] text-black py-4 rounded-lg flex items-center justify-center space-x-2 hover:bg-white transition-colors font-bold uppercase tracking-wider shadow-[0_0_20px_rgba(212,175,55,0.3)]">
                     <span>Proceed to Checkout</span>
