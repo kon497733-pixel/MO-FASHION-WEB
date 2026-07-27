@@ -6,9 +6,7 @@ import toast from 'react-hot-toast';
 import { useCartStore } from '../../store/useCartStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 
-// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
-import { db } from '../../firebase/config';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+// 🚀 ফায়ারবেস ইমপোর্ট মুছে ফেলা হয়েছে (কারণ আমরা এখন সরাসরি Render API ব্যবহার করব)
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, appliedCoupon, applyCoupon, removeCoupon } = useCartStore();
@@ -24,6 +22,7 @@ export default function CartPage() {
   // রিয়েল টাইমে ডাটাবেস থেকে প্রোডাক্ট এবং সেটিংস ফেচ করা
   useEffect(() => {
     const fetchData = async () => {
+      // ১. প্রোডাক্ট ফেচ (Render API থেকে)
       try {
         const prodRes = await fetch('https://mo-fashion-api-mehedi.onrender.com/api/products');
         if (prodRes.ok) {
@@ -35,14 +34,9 @@ export default function CartPage() {
         setDbProducts(localProds);
       }
 
-      try {
-        const docRef = doc(db, 'settings', 'store_settings');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setLiveSettings(docSnap.data());
-        }
-      } catch (e) {
-        const localSettings = JSON.parse(localStorage.getItem('mo_fashion_settings') || '{}');
+      // ২. সেটিংস ফেচ (Local Storage থেকে)
+      const localSettings = JSON.parse(localStorage.getItem('mo_fashion_settings') || '{}');
+      if (Object.keys(localSettings).length > 0) {
         setLiveSettings(localSettings);
       }
     };
@@ -129,10 +123,10 @@ export default function CartPage() {
 
   const grandTotal = Math.max(0, totalBeforeCoupon - couponDiscountAmount);
 
-  // 🚀 ১০০% বুলেটপ্রুফ কুপন অ্যাপ্লাই লজিক (যেকোনো ডিভাইসে কাজ করবেই)
+  // 🚀 ১০০% বুলেটপ্রুফ কুপন অ্যাপ্লাই লজিক (Render API থেকে সরাসরি চেক করবে)
   const handleApplyCoupon = async () => {
     const inputCode = couponInput.trim().toUpperCase();
-    
+
     if (!inputCode) {
       toast.error('Please enter a coupon code!');
       return;
@@ -145,38 +139,29 @@ export default function CartPage() {
       let cloudCoupons: any[] = [];
       let fetchSuccess = false;
 
-      // ১. ফায়ারবেস থেকে খোঁজার চেষ্টা
+      // 🚀 ১. Render API থেকে সরাসরি কুপন ফেচ করা (ফায়ারবেসের কোনো বাধা নেই)
       try {
-        const querySnapshot = await getDocs(collection(db, 'coupons'));
-        querySnapshot.forEach((docSnap) => {
-          cloudCoupons.push({ id: docSnap.id, ...docSnap.data() });
-        });
-        fetchSuccess = true;
-      } catch (e) {
-        console.warn("Firestore access blocked or failed. Using fallback method.");
-      }
-
-      // 🚀 ২. যদি ফায়ারবেস ব্লক করে দেয়, তবে গ্লোবাল রেন্ডার API দিয়ে কুপন ফায়ারবেস থেকে বাইপাস করে আনবে
-      if (!fetchSuccess || cloudCoupons.length === 0) {
-        try {
-          const apiResponse = await fetch('https://mo-fashion-api-mehedi.onrender.com/api/coupons'); // আমরা কুপন এপিআই অ্যাড করব
-          if (apiResponse.ok) {
-            const apiData = await apiResponse.json();
-            if (Array.isArray(apiData)) cloudCoupons.push(...apiData);
+        const apiResponse = await fetch('https://mo-fashion-api-mehedi.onrender.com/api/coupons');
+        if (apiResponse.ok) {
+          const apiData = await apiResponse.json();
+          if (Array.isArray(apiData)) {
+            cloudCoupons.push(...apiData);
+            fetchSuccess = true;
           }
-        } catch (e) {
-          console.warn("API fallback failed.");
         }
+      } catch (e) {
+        console.warn("Render API fallback failed.");
       }
 
-      // ৩. সবশেষে লোকাল স্টোরেজ থেকে চেক করা (সর্বোচ্চ নিরাপত্তা)
-      const localCoupons = JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
-      
-      // সব কুপন একসাথে মিলিয়ে খোঁজা
-      const allAvailableCoupons = [...cloudCoupons, ...localCoupons];
-      const validCoupon = allAvailableCoupons.find((c: any) => c.code === inputCode);
+      // ২. যদি API ফেল করে, তবে লোকাল স্টোরেজ থেকে খুঁজবে (ডাবল প্রটেকশন)
+      if (!fetchSuccess || cloudCoupons.length === 0) {
+        const localCoupons = JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
+        cloudCoupons.push(...localCoupons);
+      }
 
-      // ভ্যালিডেশন
+      // ৩. কুপন খোঁজা এবং ভ্যালিডেশন
+      const validCoupon = cloudCoupons.find((c: any) => c.code === inputCode);
+
       if (!validCoupon) {
         toast.error('Invalid coupon code!', { id: toastId });
         setIsApplyingCoupon(false);
@@ -202,7 +187,6 @@ export default function CartPage() {
         return;
       }
 
-      // ডিসকাউন্ট ভ্যালু এক্সট্র্যাক্ট করা
       let discountValue = 0;
       let discountType: 'percentage' | 'fixed' = 'fixed';
       const discountStr = String(validCoupon.discount || '').trim();
@@ -227,7 +211,7 @@ export default function CartPage() {
 
     } catch (error) {
       console.error("Error applying coupon:", error);
-      toast.error('Failed to verify coupon!', { id: toastId });
+      toast.error('Failed to verify coupon. Try again!', { id: toastId });
     } finally {
       setIsApplyingCoupon(false);
     }
@@ -400,7 +384,6 @@ export default function CartPage() {
                     <span className="text-white">{activeSettings.currency} {totalBeforeCoupon.toFixed(2)}</span>
                   </div>
                   
-                  {/* Applied Coupon */}
                   {appliedCoupon && (
                     <div className="flex justify-between items-center text-green-400 font-bold bg-green-500/10 p-3 rounded-lg border border-green-500/20 mt-2">
                       <div className="flex flex-col">
@@ -424,7 +407,6 @@ export default function CartPage() {
                   <span className="font-bold text-3xl text-[#D4AF37]">{activeSettings.currency} {grandTotal.toFixed(2)}</span>
                 </div>
 
-                {/* Coupon Input Area */}
                 {!appliedCoupon && (
                   <div className="mb-6 relative">
                     <label className="block text-xs text-gray-400 uppercase tracking-widest mb-2">Have a Promo Code?</label>
