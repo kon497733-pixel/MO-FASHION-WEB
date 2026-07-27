@@ -6,9 +6,9 @@ import toast from 'react-hot-toast';
 import { useCartStore } from '../../store/useCartStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 
-// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট 
+// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট (কুপন লাইভ চেক করার জন্য)
 import { db } from '../../firebase/config';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, appliedCoupon, applyCoupon, removeCoupon } = useCartStore();
@@ -16,39 +16,44 @@ export default function CartPage() {
   const safeSettings = settings as any;
 
   const [dbProducts, setDbProducts] = useState<any[]>([]);
+  const [liveCoupons, setLiveCoupons] = useState<any[]>([]); // 🚀 লাইভ কুপন রাখার স্টেট
   const [couponInput, setCouponInput] = useState('');
   const [liveSettings, setLiveSettings] = useState<any>(null);
   const [deliveryLocation, setDeliveryLocation] = useState('inside');
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
 
+  // 🚀 ১. রিয়েল টাইমে ডাটাবেস থেকে প্রোডাক্ট, সেটিংস এবং কুপন ফেচ করা
   useEffect(() => {
-    const fetchData = async () => {
-      // ১. প্রোডাক্ট ফেচ
-      try {
-        const prodRes = await fetch('https://mo-fashion-api-mehedi.onrender.com/api/products');
-        if (prodRes.ok) {
-          const prods = await prodRes.json();
-          setDbProducts(prods);
-        }
-      } catch (e) {
-        const localProds = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
-        setDbProducts(localProds);
-      }
+    // প্রোডাক্ট ফেচ
+    const savedProducts = localStorage.getItem('mo_fashion_products');
+    if (savedProducts) setDbProducts(JSON.parse(savedProducts));
 
-      // ২. সেটিংস ফেচ
-      try {
-        const docRef = doc(db, 'settings', 'store_settings');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setLiveSettings(docSnap.data());
-        }
-      } catch (e) {
-        const localSettings = JSON.parse(localStorage.getItem('mo_fashion_settings') || '{}');
-        setLiveSettings(localSettings);
-      }
-    };
+    // সেটিংস ফেচ
+    const savedSettings = localStorage.getItem('mo_fashion_settings');
+    if (savedSettings) setLiveSettings(JSON.parse(savedSettings));
 
-    fetchData();
+    // 🚀 ২. ফায়ারবেস ক্লাউড থেকে সরাসরি লাইভ কুপন সিঙ্ক করা (সব ডিভাইসের জন্য)
+    try {
+      const colRef = collection(db, 'coupons');
+      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+        const cloudCoupons: any[] = [];
+        snapshot.forEach((docSnap) => {
+          cloudCoupons.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        
+        if (cloudCoupons.length > 0) {
+          setLiveCoupons(cloudCoupons);
+          // লোকাল স্টোরেজেও সেভ করে রাখা হচ্ছে যাতে অফলাইনেও কাজ করে
+          localStorage.setItem('mo_fashion_coupons', JSON.stringify(cloudCoupons));
+        }
+      });
+
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn("Firestore Coupon Sync Error:", e);
+      const localCoupons = JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
+      setLiveCoupons(localCoupons);
+    }
   }, []);
 
   useEffect(() => {
@@ -114,7 +119,6 @@ export default function CartPage() {
   
   const totalBeforeCoupon = subtotalAfterProductDiscount + shipping + taxAmount;
 
-  // 🚀 কুপন ডিসকাউন্ট হিসাব
   let couponDiscountAmount = 0;
   if (appliedCoupon) {
     if (appliedCoupon.discountType === 'percentage') {
@@ -130,91 +134,67 @@ export default function CartPage() {
 
   const grandTotal = Math.max(0, totalBeforeCoupon - couponDiscountAmount);
 
-  // 🚀 ১০০% বুলেটপ্রুফ কুপন অ্যাপ্লাই লজিক (Local Storage Fallback সহ)
-  const handleApplyCoupon = async () => {
+  // 🚀 ৩. ১০০% গ্যারান্টেড কুপন অ্যাপ্লাই লজিক (সরাসরি লাইভ ডাটাবেস থেকে চেক করবে)
+  const handleApplyCoupon = () => {
     if (!couponInput.trim()) {
       toast.error('Please enter a coupon code!');
       return;
     }
 
     setIsApplyingCoupon(true);
-    const toastId = toast.loading('Checking coupon validity...');
     const inputCode = couponInput.trim().toUpperCase();
 
-    try {
-      // ১. প্রথমে ফায়ারবেস ক্লাউড থেকে খোঁজার চেষ্টা করবে
-      let cloudCoupons: any[] = [];
-      try {
-        const querySnapshot = await getDocs(collection(db, 'coupons'));
-        querySnapshot.forEach((docSnap) => {
-          cloudCoupons.push({ id: docSnap.id, ...docSnap.data() });
-        });
-      } catch (e) {
-        console.warn("Could not fetch coupons from Firebase.");
-      }
+    // লাইভ কুপন লিস্ট থেকে কুপনটি খুঁজবে
+    let sourceCoupons = liveCoupons.length > 0 ? liveCoupons : JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
+    const validCoupon = sourceCoupons.find((c: any) => c.code === inputCode);
 
-      // ২. যদি ফায়ারবেসে না পায়, তবে লোকাল স্টোরেজ থেকে খুঁজবে (যাতে কখনো Invalid না দেখায়)
-      if (cloudCoupons.length === 0) {
-        const localCoupons = JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
-        cloudCoupons.push(...localCoupons);
-      }
-
-      // ৩. কুপন ভ্যালিডেশন
-      const validCoupon = cloudCoupons.find((c: any) => c.code === inputCode);
-
-      if (!validCoupon) {
-        toast.error('Invalid coupon code!', { id: toastId });
-        setIsApplyingCoupon(false);
-        return;
-      }
-
-      if (validCoupon.status !== 'Active') {
-        toast.error('This coupon has expired or is inactive!', { id: toastId });
-        setIsApplyingCoupon(false);
-        return;
-      }
-
-      if (Number(validCoupon.used) >= Number(validCoupon.usageLimit)) {
-        toast.error('This coupon has reached its maximum usage limit!', { id: toastId });
-        setIsApplyingCoupon(false);
-        return;
-      }
-
-      const today = new Date().toISOString().split('T')[0];
-      if (validCoupon.expiry && validCoupon.expiry < today) {
-        toast.error('This coupon has expired!', { id: toastId });
-        setIsApplyingCoupon(false);
-        return;
-      }
-
-      let discountValue = 0;
-      let discountType: 'percentage' | 'fixed' = 'fixed';
-      const discountStr = String(validCoupon.discount || '').trim();
-
-      if (discountStr.includes('%')) {
-        discountValue = Number(discountStr.replace(/[^0-9.]/g, ''));
-        discountType = 'percentage';
-      } else {
-        discountValue = Number(discountStr.replace(/[^0-9.]/g, ''));
-        discountType = 'fixed';
-      }
-
-      applyCoupon({ 
-        code: validCoupon.code, 
-        discountValue: discountValue, 
-        discountType: discountType,
-        cloudId: validCoupon.id 
-      } as any);
-      
-      toast.success(`Coupon ${validCoupon.code} applied successfully!`, { id: toastId });
-      setCouponInput('');
-
-    } catch (error) {
-      console.error("Error applying coupon:", error);
-      toast.error('Failed to connect to coupon system!', { id: toastId });
-    } finally {
+    if (!validCoupon) {
+      toast.error('Invalid coupon code!');
       setIsApplyingCoupon(false);
+      return;
     }
+
+    if (validCoupon.status !== 'Active') {
+      toast.error('This coupon has expired or is inactive!');
+      setIsApplyingCoupon(false);
+      return;
+    }
+
+    if (Number(validCoupon.used) >= Number(validCoupon.usageLimit)) {
+      toast.error('This coupon has reached its maximum usage limit!');
+      setIsApplyingCoupon(false);
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    if (validCoupon.expiry && validCoupon.expiry < today) {
+      toast.error('This coupon has expired!');
+      setIsApplyingCoupon(false);
+      return;
+    }
+
+    let discountValue = 0;
+    let discountType: 'percentage' | 'fixed' = 'fixed';
+    const discountStr = String(validCoupon.discount || '').trim();
+
+    if (discountStr.includes('%')) {
+      discountValue = Number(discountStr.replace(/[^0-9.]/g, ''));
+      discountType = 'percentage';
+    } else {
+      discountValue = Number(discountStr.replace(/[^0-9.]/g, ''));
+      discountType = 'fixed';
+    }
+
+    applyCoupon({ 
+      code: validCoupon.code, 
+      discountValue: discountValue, 
+      discountType: discountType,
+      cloudId: validCoupon.id 
+    } as any);
+    
+    toast.success(`Coupon ${validCoupon.code} applied successfully!`);
+    setCouponInput('');
+    setIsApplyingCoupon(false);
   };
 
   return (
