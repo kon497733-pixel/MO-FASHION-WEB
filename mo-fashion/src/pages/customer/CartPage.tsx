@@ -6,7 +6,9 @@ import toast from 'react-hot-toast';
 import { useCartStore } from '../../store/useCartStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 
-// 🚀 ফায়ারবেস ইমপোর্ট মুছে ফেলা হয়েছে (কারণ আমরা এখন সরাসরি Render API ব্যবহার করব)
+// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট (সরাসরি কুপন চেক করার জন্য)
+import { db } from '../../firebase/config';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 
 export default function CartPage() {
   const { items, updateQuantity, removeFromCart, appliedCoupon, applyCoupon, removeCoupon } = useCartStore();
@@ -19,10 +21,9 @@ export default function CartPage() {
   const [deliveryLocation, setDeliveryLocation] = useState('inside');
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
 
-  // রিয়েল টাইমে ডাটাবেস থেকে প্রোডাক্ট এবং সেটিংস ফেচ করা
   useEffect(() => {
     const fetchData = async () => {
-      // ১. প্রোডাক্ট ফেচ (Render API থেকে)
+      // ১. প্রোডাক্ট ফেচ
       try {
         const prodRes = await fetch('https://mo-fashion-api-mehedi.onrender.com/api/products');
         if (prodRes.ok) {
@@ -34,9 +35,15 @@ export default function CartPage() {
         setDbProducts(localProds);
       }
 
-      // ২. সেটিংস ফেচ (Local Storage থেকে)
-      const localSettings = JSON.parse(localStorage.getItem('mo_fashion_settings') || '{}');
-      if (Object.keys(localSettings).length > 0) {
+      // ২. সেটিংস ফেচ
+      try {
+        const docRef = doc(db, 'settings', 'store_settings');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setLiveSettings(docSnap.data());
+        }
+      } catch (e) {
+        const localSettings = JSON.parse(localStorage.getItem('mo_fashion_settings') || '{}');
         setLiveSettings(localSettings);
       }
     };
@@ -107,7 +114,6 @@ export default function CartPage() {
   
   const totalBeforeCoupon = subtotalAfterProductDiscount + shipping + taxAmount;
 
-  // কুপন ডিসকাউন্ট হিসাব
   let couponDiscountAmount = 0;
   if (appliedCoupon) {
     if (appliedCoupon.discountType === 'percentage') {
@@ -123,7 +129,7 @@ export default function CartPage() {
 
   const grandTotal = Math.max(0, totalBeforeCoupon - couponDiscountAmount);
 
-  // 🚀 ১০০% বুলেটপ্রুফ কুপন অ্যাপ্লাই লজিক (Render API থেকে সরাসরি চেক করবে)
+  // 🚀 ১০০% গ্যারান্টেড কুপন লজিক (API বাদ দিয়ে সরাসরি ক্লাউড এবং লোকাল সিঙ্ক)
   const handleApplyCoupon = async () => {
     const inputCode = couponInput.trim().toUpperCase();
 
@@ -139,27 +145,24 @@ export default function CartPage() {
       let cloudCoupons: any[] = [];
       let fetchSuccess = false;
 
-      // 🚀 ১. Render API থেকে সরাসরি কুপন ফেচ করা (ফায়ারবেসের কোনো বাধা নেই)
+      // ১. সরাসরি ফায়ারবেস ক্লাউড থেকে সব কুপন খোঁজার চেষ্টা
       try {
-        const apiResponse = await fetch('https://mo-fashion-api-mehedi.onrender.com/api/coupons');
-        if (apiResponse.ok) {
-          const apiData = await apiResponse.json();
-          if (Array.isArray(apiData)) {
-            cloudCoupons.push(...apiData);
-            fetchSuccess = true;
-          }
-        }
+        const querySnapshot = await getDocs(collection(db, 'coupons'));
+        querySnapshot.forEach((docSnap) => {
+          cloudCoupons.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        fetchSuccess = true;
       } catch (e) {
-        console.warn("Render API fallback failed.");
+        console.warn("Firestore access blocked. Falling back to local/live sync.");
       }
 
-      // ২. যদি API ফেল করে, তবে লোকাল স্টোরেজ থেকে খুঁজবে (ডাবল প্রটেকশন)
+      // ২. যদি ক্লাউড থেকে না আসে বা ব্লক থাকে, তবে গ্লোবাল লোকাল স্টোরেজ থেকে সিঙ্ক করবে
       if (!fetchSuccess || cloudCoupons.length === 0) {
         const localCoupons = JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
         cloudCoupons.push(...localCoupons);
       }
 
-      // ৩. কুপন খোঁজা এবং ভ্যালিডেশন
+      // ৩. কুপন খোঁজা
       const validCoupon = cloudCoupons.find((c: any) => c.code === inputCode);
 
       if (!validCoupon) {
