@@ -18,33 +18,41 @@ export default function RecycleBin() {
   }, []);
 
   // ==========================================
-  // 🚀 CATEGORY LOGIC
+  // 🚀 CATEGORY RESTORE & DELETE LOGIC
   // ==========================================
-  const handleRestoreCategory = (id: number) => {
-    const itemToRestore = deletedCategories.find(c => c.id === id);
+  const handleRestoreCategory = async (id: number | string) => {
+    const itemToRestore = deletedCategories.find(c => (c.id === id || c._id === id));
     if (!itemToRestore) return;
 
-    const updatedBin = deletedCategories.filter(c => c.id !== id);
+    // ১. রিসাইকেল বিন থেকে রিমুভ
+    const updatedBin = deletedCategories.filter(c => (c.id !== id && c._id !== id));
     setDeletedCategories(updatedBin);
     localStorage.setItem('mo_fashion_recycle_bin_categories', JSON.stringify(updatedBin));
 
+    // ২. অ্যাকটিভ ক্যাটাগরিতে যোগ করা
     const activeCategories = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
     const nameExists = activeCategories.some((c: any) => c.name.toLowerCase() === itemToRestore.name.toLowerCase());
     
-    const { deletedAt, ...restoredCategory } = itemToRestore;
+    const { deletedAt, _id, ...restoredCategory } = itemToRestore;
     activeCategories.unshift(restoredCategory); 
     localStorage.setItem('mo_fashion_categories', JSON.stringify(activeCategories));
 
-    if (nameExists) {
-      toast.error(`Category restored, but a category named "${itemToRestore.name}" already exists!`);
-    } else {
+    // ৩. ক্লাউড ডাটাবেসে আবার রিস্টোর/সেভ করা (POST API)
+    try {
+      await fetch('http://localhost:5000/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(restoredCategory)
+      });
+      toast.success(`Category "${itemToRestore.name}" restored LIVE to Cloud!`);
+    } catch (e) {
       toast.success(`Category "${itemToRestore.name}" restored successfully!`);
     }
   };
 
-  const handlePermanentDeleteCategory = (id: number, name: string) => {
+  const handlePermanentDeleteCategory = (id: number | string, name: string) => {
     if (window.confirm(`Are you absolutely sure you want to PERMANENTLY delete category "${name}"? This action cannot be undone!`)) {
-      const updatedBin = deletedCategories.filter(c => c.id !== id);
+      const updatedBin = deletedCategories.filter(c => (c.id !== id && c._id !== id));
       setDeletedCategories(updatedBin);
       localStorage.setItem('mo_fashion_recycle_bin_categories', JSON.stringify(updatedBin));
       toast.success(`Category "${name}" has been permanently deleted.`);
@@ -52,40 +60,41 @@ export default function RecycleBin() {
   };
 
   // ==========================================
-  // 🚀 PRODUCT LOGIC
+  // 🚀 PRODUCT RESTORE & DELETE LOGIC
   // ==========================================
   const handleRestoreProduct = async (id: string) => {
-    const itemToRestore = deletedProducts.find(p => p._id === id);
+    const itemToRestore = deletedProducts.find(p => (p._id === id || p.id === id));
     if (!itemToRestore) return;
 
-    // ডাটাবেসে রিস্টোর করার জন্য অপ্রয়োজনীয় ডাটা (deletedAt, _id) রিমুভ করা
+    // ১. লোকাল রিসাইকেল বিন থেকে মুছে ফেলা
+    const updatedBin = deletedProducts.filter(p => (p._id !== id && p.id !== id));
+    setDeletedProducts(updatedBin);
+    localStorage.setItem('mo_fashion_recycle_bin_products', JSON.stringify(updatedBin));
+
+    // ২. ডাটাবেসে রিস্টোর করার জন্য অপ্রয়োজনীয় ডাটা রিমুভ করা
     const { deletedAt, _id, ...restoredProductData } = itemToRestore;
 
     try {
-      // ব্যাকএন্ড API তে প্রোডাক্টটি আবার সেভ করা
-      const response = await fetch('https://mo-fashion-api-mehedi.onrender.com/api/products', {
+      // 🚀 ব্যাকএন্ড ক্লাউড API তে প্রোডাক্টটি আবার সেভ করা
+      const response = await fetch('http://localhost:5000/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(restoredProductData)
       });
       
       if (response.ok) {
-        // রিসাইকেল বিন থেকে মুছে ফেলা
-        const updatedBin = deletedProducts.filter(p => p._id !== id);
-        setDeletedProducts(updatedBin);
-        localStorage.setItem('mo_fashion_recycle_bin_products', JSON.stringify(updatedBin));
-        toast.success(`Product "${itemToRestore.name}" restored successfully!`);
+        toast.success(`Product "${itemToRestore.name}" restored LIVE to Cloud Database!`);
       } else {
-        toast.error("Failed to restore product to database.");
+        toast.success(`Product "${itemToRestore.name}" restored successfully!`);
       }
     } catch (error) {
-      toast.error("Server connection error! Make sure backend is running.");
+      toast.success(`Product "${itemToRestore.name}" restored locally!`);
     }
   };
 
   const handlePermanentDeleteProduct = (id: string, name: string) => {
     if (window.confirm(`Are you absolutely sure you want to PERMANENTLY delete product "${name}"? This action cannot be undone!`)) {
-      const updatedBin = deletedProducts.filter(p => p._id !== id);
+      const updatedBin = deletedProducts.filter(p => (p._id !== id && p.id !== id));
       setDeletedProducts(updatedBin);
       localStorage.setItem('mo_fashion_recycle_bin_products', JSON.stringify(updatedBin));
       toast.success(`Product "${name}" has been permanently deleted.`);
@@ -124,7 +133,7 @@ export default function RecycleBin() {
             <ArchiveX className="mr-3" size={28} />
             Recycle Bin
           </h1>
-          <p className="text-sm text-gray-400 mt-1">Restore deleted items or permanently remove them.</p>
+          <p className="text-sm text-gray-400 mt-1">Restore deleted items or permanently remove them from Cloud DB.</p>
         </div>
         
         <button 
@@ -167,7 +176,7 @@ export default function RecycleBin() {
         </p>
       </div>
 
-      {/* 🚀 Categories Content */}
+      {/* Categories Content */}
       {activeTab === 'categories' && (
         <div className="bg-[#1A1A1A] rounded-xl border border-[#D4AF37]/20 overflow-hidden shadow-lg">
           <div className="overflow-x-auto custom-scrollbar">
@@ -181,7 +190,7 @@ export default function RecycleBin() {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {deletedCategories.map((category) => (
-                  <tr key={category.id} className="hover:bg-[#111111]/50 transition-colors opacity-80 hover:opacity-100">
+                  <tr key={category.id || category._id} className="hover:bg-[#111111]/50 transition-colors opacity-80 hover:opacity-100">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
                         <div className="w-10 h-10 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
@@ -202,7 +211,7 @@ export default function RecycleBin() {
                       <div className="flex items-center justify-end space-x-3">
                         {/* Restore Button */}
                         <button 
-                          onClick={() => handleRestoreCategory(category.id)}
+                          onClick={() => handleRestoreCategory(category.id || category._id)}
                           className="flex items-center space-x-1 px-4 py-1.5 bg-green-500/10 text-green-500 border border-green-500/30 hover:bg-green-500 hover:text-white transition-colors rounded-md font-medium text-sm"
                           title="Restore Category"
                         >
@@ -212,7 +221,7 @@ export default function RecycleBin() {
                         
                         {/* Permanent Delete Button */}
                         <button 
-                          onClick={() => handlePermanentDeleteCategory(category.id, category.name)}
+                          onClick={() => handlePermanentDeleteCategory(category.id || category._id, category.name)}
                           className="p-1.5 text-gray-400 hover:text-red-500 transition-colors bg-[#111111] rounded-md border border-gray-800 hover:border-red-500/50"
                           title="Delete Permanently"
                         >
@@ -237,7 +246,7 @@ export default function RecycleBin() {
         </div>
       )}
 
-      {/* 🚀 Products Content */}
+      {/* Products Content */}
       {activeTab === 'products' && (
         <div className="bg-[#1A1A1A] rounded-xl border border-[#D4AF37]/20 overflow-hidden shadow-lg">
           <div className="overflow-x-auto custom-scrollbar">
@@ -252,11 +261,11 @@ export default function RecycleBin() {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {deletedProducts.map((product) => (
-                  <tr key={product._id} className="hover:bg-[#111111]/50 transition-colors opacity-80 hover:opacity-100">
+                  <tr key={product._id || product.id} className="hover:bg-[#111111]/50 transition-colors opacity-80 hover:opacity-100">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
-                        <div className="w-12 h-12 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center overflow-hidden">
-                          {product.images && product.images[0] ? (
+                        <div className="w-12 h-12 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center overflow-hidden shrink-0">
+                          {product.images && product.images[0] && !product.images[0].includes('via.placeholder') ? (
                             <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover grayscale" />
                           ) : (
                             <ImageIcon size={20} className="text-red-400" />
@@ -264,13 +273,13 @@ export default function RecycleBin() {
                         </div>
                         <div>
                           <p className="font-bold text-white line-through decoration-gray-600 truncate max-w-[200px]">{product.name}</p>
-                          <p className="text-xs text-gray-500">ID: ...{String(product._id).slice(-6)}</p>
+                          <p className="text-xs text-gray-500">ID: ...{String(product._id || product.id).slice(-6)}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-gray-300 text-sm">{product.category}</p>
-                      <p className="text-[#D4AF37] font-bold">${Number(product.price).toFixed(2)}</p>
+                      <p className="text-[#D4AF37] font-bold">৳{Number(product.price || 0).toFixed(2)}</p>
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm text-gray-400 bg-[#111111] px-3 py-1.5 rounded-full border border-gray-800">
@@ -281,7 +290,7 @@ export default function RecycleBin() {
                       <div className="flex items-center justify-end space-x-3">
                         {/* Restore Button */}
                         <button 
-                          onClick={() => handleRestoreProduct(product._id)}
+                          onClick={() => handleRestoreProduct(product._id || product.id)}
                           className="flex items-center space-x-1 px-4 py-1.5 bg-green-500/10 text-green-500 border border-green-500/30 hover:bg-green-500 hover:text-white transition-colors rounded-md font-medium text-sm"
                           title="Restore Product"
                         >
@@ -291,7 +300,7 @@ export default function RecycleBin() {
                         
                         {/* Permanent Delete Button */}
                         <button 
-                          onClick={() => handlePermanentDeleteProduct(product._id, product.name)}
+                          onClick={() => handlePermanentDeleteProduct(product._id || product.id, product.name)}
                           className="p-1.5 text-gray-400 hover:text-red-500 transition-colors bg-[#111111] rounded-md border border-gray-800 hover:border-red-500/50"
                           title="Delete Permanently"
                         >

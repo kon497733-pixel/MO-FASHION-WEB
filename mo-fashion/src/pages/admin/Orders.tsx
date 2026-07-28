@@ -4,61 +4,100 @@ import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
 
 export default function Orders() {
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>(() => {
+    const saved = localStorage.getItem('mo_fashion_orders');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  // 🚀 ১. ক্লাউড ডাটাবেজ (MongoDB API) থেকে রিয়েল-টাইম সব অর্ডার ফেচ করা
+  const fetchOrders = async () => {
+    // ১. লোকালস্টোরেজ থেকে ইনস্ট্যান্ট লোড
+    const savedLocal = localStorage.getItem('mo_fashion_orders');
+    if (savedLocal) {
+      try {
+        setOrders(JSON.parse(savedLocal));
+      } catch (e) {}
+    }
+
+    // ২. ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম সিঙ্ক
+    try {
+      setLoading(true);
+      const response = await fetch('http://localhost:5000/api/orders');
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setOrders(data);
+          localStorage.setItem('mo_fashion_orders', JSON.stringify(data));
+        }
+      }
+    } catch (error) {
+      console.warn("Backend API offline, using cached local orders.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchOrders();
   }, []);
-
-  const fetchOrders = async () => {
-    try {
-      // 🚀 FIX: ডাটাবেসের বদলে সরাসরি লোকাল স্টোরেজ থেকে ডাটা নেওয়া হচ্ছে, 
-      // যাতে চেকআউট করার সাথে সাথে অর্ডারটি এখানে শো করে।
-      const localOrders = JSON.parse(localStorage.getItem('mo_fashion_orders') || '[]');
-      setOrders(localOrders);
-    } catch (error) {
-      console.error("Error fetching orders:", error);
-    }
-  };
 
   const handleViewOrder = (order: any) => {
     setSelectedOrder(order);
     setIsModalOpen(true);
   };
 
-  // 🚀 FIX: স্ট্যাটাস আপডেট সরাসরি লোকাল স্টোরেজে করা হচ্ছে
+  // 🚀 ২. ক্লাউড ডাটাবেসে অর্ডারের স্ট্যাটাস আপডেট করার API (PUT)
   const handleUpdateStatus = async (newStatus: string) => {
-    const orderId = selectedOrder._id || selectedOrder.id; 
-    updateStatusLocally(orderId, newStatus);
-  };
+    const orderId = selectedOrder._id || selectedOrder.id;
 
-  const updateStatusLocally = (id: string, newStatus: string) => {
-    const updatedOrders = orders.map((o: any) => (o._id || o.id) === id ? { ...o, status: newStatus } : o);
+    // ১. লোকাল ইনস্ট্যান্ট আপডেট
+    const updatedOrders = orders.map((o: any) => 
+      (o._id || o.id) === orderId ? { ...o, status: newStatus } : o
+    );
     setOrders(updatedOrders);
     localStorage.setItem('mo_fashion_orders', JSON.stringify(updatedOrders));
     setSelectedOrder({ ...selectedOrder, status: newStatus });
     toast.success(`Order status updated to ${newStatus}!`);
-  };
 
-  // 🚀 FIX: ডিলিট লজিক সরাসরি লোকাল স্টোরেজে করা হচ্ছে
-  const handleDeleteOrder = async (id: string) => {
-    if (window.confirm("Are you sure you want to delete this order completely? This action cannot be undone.")) {
-      deleteOrderLocally(id);
-      toast.success("Order deleted successfully!");
+    // ২. ক্লাউড ডাটাবেস আপডেট
+    try {
+      await fetch(`http://localhost:5000/api/orders/${orderId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+    } catch (error) {
+      console.warn("Cloud status update failed, saved locally.");
     }
   };
 
-  const deleteOrderLocally = (id: string) => {
-    const remainingOrders = orders.filter((order: any) => (order._id || order.id) !== id);
-    setOrders(remainingOrders);
-    localStorage.setItem('mo_fashion_orders', JSON.stringify(remainingOrders));
-    setIsModalOpen(false);
+  // 🚀 ৩. ক্লাউড ডাটাবেস থেকে অর্ডার ডিলিট করার API (DELETE)
+  const handleDeleteOrder = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this order completely? This action cannot be undone.")) {
+      // ১. লোকাল ইনস্ট্যান্ট ডিলিট
+      const remainingOrders = orders.filter((order: any) => (order._id || order.id) !== id);
+      setOrders(remainingOrders);
+      localStorage.setItem('mo_fashion_orders', JSON.stringify(remainingOrders));
+      setIsModalOpen(false);
+      toast.success("Order deleted successfully!");
+
+      // ২. ক্লাউড ডাটাবেস থেকে ডিলিট
+      try {
+        await fetch(`http://localhost:5000/api/orders/${id}`, {
+          method: 'DELETE',
+        });
+      } catch (error) {
+        console.warn("Cloud delete failed, deleted locally.");
+      }
+    }
   };
 
+  // সার্চ এবং স্ট্যাটাস ফিল্টার লজিক
   const validOrders = Array.isArray(orders) ? orders : [];
   const filteredOrders = validOrders.filter((order: any) => {
     const customerName = order.customerInfo ? `${order.customerInfo.firstName} ${order.customerInfo.lastName}` : (order.customer || 'Unknown');
@@ -81,7 +120,7 @@ export default function Orders() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h1 className="text-2xl font-serif font-bold text-[#D4AF37] tracking-wider uppercase">Orders Management</h1>
-          <p className="text-sm text-gray-400 mt-1">Track, process, and manage customer orders</p>
+          <p className="text-sm text-gray-400 mt-1">Track, process, and manage live customer orders from Cloud DB</p>
         </div>
       </div>
 
@@ -183,10 +222,10 @@ export default function Orders() {
                   </tr>
                 );
               })}
-              {filteredOrders.length === 0 && (
+              {filteredOrders.length === 0 && !loading && (
                 <tr>
                   <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
-                    No orders found.
+                    No orders found in database. When a customer places an order, it will appear here live!
                   </td>
                 </tr>
               )}

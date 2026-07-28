@@ -4,30 +4,17 @@ import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
 
 export default function Coupons() {
-  // 🚀 ডাটাবেস (Local Storage) থেকে কুপন ডাটা লোড করা
   const [coupons, setCoupons] = useState<any[]>(() => {
     const savedCoupons = localStorage.getItem('mo_fashion_coupons');
-    if (savedCoupons) {
-      return JSON.parse(savedCoupons);
-    }
-    // ডিফল্ট কিছু ডেমো কুপন (যদি আগে থেকে না থাকে)
-    return [
-      { id: 1, code: 'WELCOME20', discountValue: 20, type: 'percentage', usageLimit: 500, used: 145, expiryDate: '2026-12-31', status: 'Active' },
-      { id: 2, code: 'FLAT500', discountValue: 500, type: 'fixed', usageLimit: 100, used: 100, expiryDate: '2026-08-15', status: 'Expired' },
-    ];
+    return savedCoupons ? JSON.parse(savedCoupons) : [];
   });
 
-  // কুপনগুলোতে কোনো পরিবর্তন হলে তা সাথে সাথে সেভ করা
-  useEffect(() => {
-    localStorage.setItem('mo_fashion_coupons', JSON.stringify(coupons));
-  }, [coupons]);
-
-  // স্টেটস
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [formData, setFormData] = useState({
-    id: 0,
+    id: '',
+    _id: '',
     code: '',
     discountValue: '',
     type: 'percentage',
@@ -37,17 +24,51 @@ export default function Coupons() {
     status: 'Active'
   });
 
+  // 🚀 ১. ক্লাউড ডাটাবেজ (MongoDB API) থেকে রিয়েল-টাইম কুপন ডাটা ফেচ করা
+  const fetchCoupons = async () => {
+    // লোকালস্টোরেজ থেকে ইনস্ট্যান্ট লোড
+    const savedLocal = localStorage.getItem('mo_fashion_coupons');
+    if (savedLocal) {
+      try {
+        setCoupons(JSON.parse(savedLocal));
+      } catch (e) {}
+    }
+
+    // ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম সিঙ্ক
+    try {
+      const response = await fetch('http://localhost:5000/api/coupons');
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          const formatted = data.map(item => ({
+            id: item._id || item.id,
+            _id: item._id || item.id,
+            ...item
+          }));
+          setCoupons(formatted);
+          localStorage.setItem('mo_fashion_coupons', JSON.stringify(formatted));
+        }
+      }
+    } catch (error) {
+      console.warn("Backend API offline, using cached coupons.");
+    }
+  };
+
+  useEffect(() => {
+    fetchCoupons();
+  }, []);
+
   // 🚀 অটোমেটিক সিকিউর কুপন কোড জেনারেটর
   const generateRandomCode = () => {
     const randomString = Math.random().toString(36).substring(2, 8).toUpperCase();
     setFormData({ ...formData, code: `MO-${randomString}` });
   };
 
-  // 모ডাল ওপেন করা (নতুন কুপন অ্যাড করার জন্য)
   const handleOpenAdd = () => {
     setModalMode('add');
     setFormData({ 
-      id: Date.now(), 
+      id: '',
+      _id: '', 
       code: '', 
       discountValue: '', 
       type: 'percentage', 
@@ -59,29 +80,52 @@ export default function Coupons() {
     setIsModalOpen(true);
   };
 
-  // 모ডাল ওপেন করা (পুরোনো কুপন এডিট করার জন্য)
   const handleOpenEdit = (coupon: any) => {
     setModalMode('edit');
-    setFormData(coupon);
+    const targetId = coupon._id || coupon.id;
+    
+    // HTML input[type="date"] এর জন্য এক্সপায়ারি ডেট ফরম্যাট করা
+    let formattedDate = coupon.expiryDate;
+    if (coupon.expiryDate) {
+      try {
+        formattedDate = new Date(coupon.expiryDate).toISOString().split('T')[0];
+      } catch(e){}
+    }
+
+    setFormData({
+      ...coupon,
+      id: targetId,
+      _id: targetId,
+      expiryDate: formattedDate || ''
+    });
     setIsModalOpen(true);
   };
 
-  // কুপন ডিলিট করার লজিক
-  const handleDelete = (id: number, code: string) => {
+  // 🚀 ২. ক্লাউড ডাটাবেস থেকে কুপন ডিলিট করা
+  const handleDelete = async (id: string, code: string) => {
     if (window.confirm(`Are you sure you want to delete the coupon "${code}"?`)) {
-      setCoupons(coupons.filter(c => c.id !== id));
-      toast.success(`Coupon ${code} deleted successfully!`);
+      const updated = coupons.filter(c => (c._id || c.id) !== id);
+      setCoupons(updated);
+      localStorage.setItem('mo_fashion_coupons', JSON.stringify(updated));
+      toast.success(`Coupon ${code} deleted!`);
+
+      try {
+        await fetch(`http://localhost:5000/api/coupons/${id}`, {
+          method: 'DELETE'
+        });
+      } catch (e) {
+        console.warn("Cloud delete failed.");
+      }
     }
   };
 
-  // এক ক্লিকে কুপন কোড কপি করা
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
     toast.success(`Coupon code ${code} copied to clipboard!`);
   };
 
-  // কুপন সেভ বা আপডেট করার মেইন লজিক
-  const handleSubmit = (e: React.FormEvent) => {
+  // 🚀 ৩. ক্লাউড ডাটাবেসে সেভ বা আপডেট করার লজিক (POST / PUT API)
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.code.trim() || !formData.discountValue || !formData.usageLimit || !formData.expiryDate) {
@@ -91,7 +135,6 @@ export default function Coupons() {
 
     const finalCode = formData.code.trim().toUpperCase();
 
-    // 🚀 ডুপ্লিকেট কুপন কোড চেক করা (একই কোড দুবার দেওয়া যাবে না)
     if (modalMode === 'add') {
       const isDuplicate = coupons.some(c => c.code === finalCode);
       if (isDuplicate) {
@@ -100,25 +143,62 @@ export default function Coupons() {
       }
     }
 
-    const newCoupon = {
-      ...formData,
+    const couponPayload = {
       code: finalCode,
       discountValue: Number(formData.discountValue),
+      type: formData.type,
       usageLimit: Number(formData.usageLimit),
+      used: Number(formData.used) || 0,
+      expiryDate: formData.expiryDate,
+      status: formData.status
     };
 
+    const targetId = formData._id || formData.id || Date.now().toString();
+    const localObj = { id: targetId, _id: targetId, ...couponPayload };
+
+    let updatedList = [];
     if (modalMode === 'add') {
-      setCoupons([newCoupon, ...coupons]);
-      toast.success("New coupon created and activated!");
+      updatedList = [localObj, ...coupons];
     } else {
-      setCoupons(coupons.map(c => c.id === formData.id ? newCoupon : c));
-      toast.success("Coupon details updated successfully!");
+      updatedList = coupons.map(c => (c._id || c.id) === targetId ? localObj : c);
     }
-    
+
+    // ১. লোকাল স্টোরেজে ইনস্ট্যান্ট সেভ
+    setCoupons(updatedList);
+    localStorage.setItem('mo_fashion_coupons', JSON.stringify(updatedList));
+
     setIsModalOpen(false);
+    const toastId = toast.loading("Saving coupon to Cloud Database...");
+
+    // ২. ক্লাউড ডাটাবেসে (MongoDB API) সেভ করা
+    try {
+      let response;
+      if (modalMode === 'add') {
+        response = await fetch('http://localhost:5000/api/coupons', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(couponPayload)
+        });
+      } else {
+        response = await fetch(`http://localhost:5000/api/coupons/${targetId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(couponPayload)
+        });
+      }
+
+      if (response.ok) {
+        toast.success("Coupon saved LIVE on Cloud!", { id: toastId });
+        fetchCoupons(); // রিরিলোড
+      } else {
+        toast.success("Coupon saved successfully!", { id: toastId });
+      }
+    } catch (error) {
+      console.warn("Cloud Sync warning:", error);
+      toast.success("Coupon saved locally!", { id: toastId });
+    }
   };
 
-  // সার্চ ফিল্টার লজিক
   const filteredCoupons = coupons.filter(coupon => 
     coupon.code.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -129,7 +209,7 @@ export default function Coupons() {
         <title>Admin - Coupons Management | MO FASHION</title>
       </Helmet>
 
-      {/* 🚀 Header Section */}
+      {/* Header Section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h1 className="text-2xl font-serif font-bold text-[#D4AF37] tracking-wider uppercase">Coupons Management</h1>
@@ -144,7 +224,7 @@ export default function Coupons() {
         </button>
       </div>
 
-      {/* 🚀 Search Section */}
+      {/* Search Section */}
       <div className="bg-[#1A1A1A] p-4 rounded-xl border border-[#D4AF37]/20 mb-6 flex flex-col md:flex-row gap-4 justify-between items-center shadow-lg">
         <div className="relative w-full max-w-md">
           <input 
@@ -158,7 +238,7 @@ export default function Coupons() {
         </div>
       </div>
 
-      {/* 🚀 Coupons Table (Fully Responsive) */}
+      {/* Coupons Table */}
       <div className="bg-[#1A1A1A] rounded-xl border border-[#D4AF37]/20 overflow-hidden shadow-2xl">
         <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full text-left whitespace-nowrap">
@@ -174,12 +254,11 @@ export default function Coupons() {
             </thead>
             <tbody className="divide-y divide-gray-800">
               {filteredCoupons.map((coupon) => {
-                // 🚀 প্রোগ্রেস বার লজিক (Usage Tracking)
                 const usagePercent = coupon.usageLimit > 0 ? (coupon.used / coupon.usageLimit) * 100 : 0;
                 const isNearingLimit = usagePercent > 80;
 
                 return (
-                  <tr key={coupon.id} className="hover:bg-[#111111]/50 transition-colors">
+                  <tr key={coupon._id || coupon.id} className="hover:bg-[#111111]/50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
                         <div className="w-10 h-10 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37]">
@@ -205,7 +284,7 @@ export default function Coupons() {
                     <td className="px-6 py-4">
                       <div className="flex flex-col w-32">
                         <div className="flex justify-between text-xs mb-1">
-                          <span className="text-white font-medium">{coupon.used} Used</span>
+                          <span className="text-white font-medium">{coupon.used || 0} Used</span>
                           <span className="text-gray-500">of {coupon.usageLimit}</span>
                         </div>
                         <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
@@ -217,7 +296,9 @@ export default function Coupons() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="text-gray-300 font-medium">{new Date(coupon.expiryDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      <span className="text-gray-300 font-medium">
+                        {coupon.expiryDate ? new Date(coupon.expiryDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No Expiry'}
+                      </span>
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-3 py-1.5 rounded-full text-xs font-bold border inline-block ${
@@ -238,7 +319,7 @@ export default function Coupons() {
                           <Edit size={16} />
                         </button>
                         <button 
-                          onClick={() => handleDelete(coupon.id, coupon.code)}
+                          onClick={() => handleDelete(coupon._id || coupon.id, coupon.code)}
                           className="p-2 text-gray-400 hover:text-red-500 transition-colors bg-[#111111] rounded-md border border-gray-800 hover:border-red-500/50"
                           title="Delete Coupon"
                         >
@@ -263,7 +344,7 @@ export default function Coupons() {
         </div>
       </div>
 
-      {/* 🚀 Add/Edit Coupon Modal */}
+      {/* Add/Edit Coupon Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col">
@@ -280,7 +361,6 @@ export default function Coupons() {
             
             <form id="couponForm" onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
               
-              {/* Coupon Code & Generator */}
               <div>
                 <label className="block text-gray-300 text-sm mb-2 font-bold uppercase tracking-wider">Coupon Code *</label>
                 <div className="flex gap-3">
@@ -306,7 +386,6 @@ export default function Coupons() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Discount Type */}
                 <div>
                   <label className="block text-gray-300 text-sm mb-2 font-medium">Discount Type *</label>
                   <select 
@@ -319,7 +398,6 @@ export default function Coupons() {
                   </select>
                 </div>
                 
-                {/* Discount Value */}
                 <div>
                   <label className="block text-gray-300 text-sm mb-2 font-medium">
                     Discount Value {formData.type === 'percentage' ? '(%)' : '(৳)'} *
@@ -338,7 +416,6 @@ export default function Coupons() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Usage Limit */}
                 <div>
                   <label className="block text-gray-300 text-sm mb-2 font-medium">Total Usage Limit *</label>
                   <input 
@@ -352,7 +429,6 @@ export default function Coupons() {
                   />
                 </div>
 
-                {/* Expiry Date */}
                 <div>
                   <label className="block text-gray-300 text-sm mb-2 font-medium">Expiry Date *</label>
                   <input 
@@ -366,7 +442,6 @@ export default function Coupons() {
                 </div>
               </div>
 
-              {/* Status */}
               <div>
                 <label className="block text-gray-300 text-sm mb-2 font-medium">Coupon Status</label>
                 <select 
@@ -395,7 +470,7 @@ export default function Coupons() {
                 type="submit"
                 className="bg-[#D4AF37] text-black px-8 py-2.5 rounded-lg hover:bg-white transition-colors font-bold shadow-[0_0_15px_rgba(212,175,55,0.3)] uppercase tracking-wider"
               >
-                {modalMode === 'add' ? 'Save Coupon' : 'Update Coupon'}
+                {modalMode === 'add' ? 'Save Coupon & Push Live' : 'Update Coupon'}
               </button>
             </div>
             

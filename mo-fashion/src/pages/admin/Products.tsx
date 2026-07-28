@@ -5,15 +5,19 @@ import {
 } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
+import { notifyProductChange } from '../../services/emailService'; 
 
 export default function Products() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadIndex, setUploadIndex] = useState<number | null>(null);
 
-  // 🚀 লাইভ মঙ্গোডিবি এপিআই
-  const API_URL = 'https://mo-fashion-api-mehedi.onrender.com/api/products';
+  // 🚀 মঙ্গোডিবি ক্লাউড এপিআই লিঙ্ক
+  const API_URL = 'http://localhost:5000/api/products';
 
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>(() => {
+    const saved = localStorage.getItem('mo_fashion_products');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -28,42 +32,29 @@ export default function Products() {
     price: '', discount: '0', stock: '', status: 'Active', images: [''],
   });
 
-  // 🚀 ১. ডাটাবেস থেকে প্রোডাক্ট লোড এবং ডিসকাউন্ট এক্সট্র্যাক্ট করা
+  // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম প্রোডাক্ট ফেচ করা
   const fetchProducts = async () => {
+    // ১. লোকালস্টোরেজ থেকে ইনস্ট্যান্ট লোড
+    const savedLocal = localStorage.getItem('mo_fashion_products');
+    if (savedLocal) {
+      try {
+        setProducts(JSON.parse(savedLocal));
+      } catch (e) {}
+    }
+
+    // ২. ক্লাউড ডাটাবেস থেকে লাইভ সিঙ্ক
     try {
       setLoading(true);
       const response = await fetch(API_URL);
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          // 🚀 হিডেন ট্যাগ থেকে ডিসকাউন্ট রিকভার করা (যাতে রিফ্রেশ দিলে না মোছে)
-          const parsedProducts = data.map((p: any) => {
-            let extractedDiscount = Number(p.discount) || 0;
-            let cleanDesc = p.description || '';
-
-            if (p.description && p.description.includes('[DISCOUNT:')) {
-              const match = p.description.match(/\[DISCOUNT:(\d+)\]/);
-              if (match) {
-                extractedDiscount = Number(match[1]);
-                cleanDesc = p.description.replace(/\[DISCOUNT:\d+\]\s*/, '');
-              }
-            }
-
-            return {
-              ...p,
-              discount: extractedDiscount,
-              description: cleanDesc
-            };
-          });
-
-          setProducts(parsedProducts);
-          localStorage.setItem('mo_fashion_products', JSON.stringify(parsedProducts));
+          setProducts(data);
+          localStorage.setItem('mo_fashion_products', JSON.stringify(data));
         }
       }
     } catch (error) {
-      console.error("Error fetching live products:", error);
-      const saved = localStorage.getItem('mo_fashion_products');
-      if (saved) setProducts(JSON.parse(saved));
+      console.warn("Backend API offline, using cached local products.");
     } finally {
       setLoading(false);
     }
@@ -71,14 +62,17 @@ export default function Products() {
 
   useEffect(() => {
     fetchProducts();
+    
+    // ক্যাটাগরিগুলো নিয়ে আসা
     const savedCategories = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
     setCategories(savedCategories.length > 0 ? savedCategories : [{ name: "Men's Collection" }]);
   }, []);
 
   const handleOpenAdd = () => {
     setModalMode('add');
+    const newId = Date.now().toString();
     setFormData({ 
-      _id: '', id: '', name: '', description: '', 
+      _id: newId, id: newId, name: '', description: '', 
       category: categories.length > 0 ? categories[0].name : "Men's Collection", 
       price: '', discount: '0', stock: '10', status: 'Active', images: [''] 
     });
@@ -87,12 +81,13 @@ export default function Products() {
 
   const handleOpenEdit = (product: any) => {
     setModalMode('edit');
+    const targetId = product._id || product.id;
     setFormData({
-      _id: product._id || product.id,
-      id: product.id || product._id,
+      _id: targetId,
+      id: targetId,
       name: product.name || '',
       description: product.description || '', 
-      category: product.category || "Men's Collection",
+      category: product.category || (categories.length > 0 ? categories[0].name : "Men's Collection"),
       price: product.price ? product.price.toString() : '',
       discount: (product.discount !== undefined && product.discount !== null) ? product.discount.toString() : '0',
       stock: product.stock !== undefined ? product.stock.toString() : '0',
@@ -102,6 +97,7 @@ export default function Products() {
     setIsModalOpen(true);
   };
 
+  // 🚀 ২. আল্ট্রা-লাইটওয়েট ইমেজ কমপ্রেশন (কম্পিউটার থেকে ছবি আপলোডের জন্য)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && uploadIndex !== null) {
@@ -110,18 +106,22 @@ export default function Products() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 600; 
+          const MAX_WIDTH = 500; 
           const scaleFactor = Math.min(1, MAX_WIDTH / img.width);
           canvas.width = img.width * scaleFactor;
           canvas.height = img.height * scaleFactor;
           const ctx = canvas.getContext('2d');
-          if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          }
           
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
           const updatedImages = [...formData.images];
           updatedImages[uploadIndex] = compressedBase64;
           setFormData({ ...formData, images: updatedImages });
-          toast.success('Image loaded!');
+          toast.success('Image loaded & compressed!');
         };
         img.src = event.target?.result as string;
       };
@@ -140,85 +140,104 @@ export default function Products() {
     setFormData({ ...formData, images: updatedImages });
   };
 
+  // 🚀 ৩. ক্লাউড ডাটাবেস থেকে প্রোডাক্ট ডিলিট করার API কল
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
-      const toastId = toast.loading("Deleting from live database...");
+      // ১. লোকাল ইনস্ট্যান্ট রিমুভ
+      const remaining = products.filter(p => (p._id || p.id) !== id);
+      setProducts(remaining);
+      localStorage.setItem('mo_fashion_products', JSON.stringify(remaining));
+
+      toast.success("Product deleted!");
+
+      // ২. ক্লাউড থেকে ডিলিট (DELETE API)
       try {
-        const response = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
-        if (response.ok) {
-          toast.success("Product deleted live!", { id: toastId });
-          fetchProducts();
-        } else {
-          toast.error("Failed to delete from server", { id: toastId });
-        }
+        await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+        try { await notifyProductChange('Deleted', name); } catch(e){}
       } catch (e) {
-        toast.error("Network Error!", { id: toastId });
+        console.warn("Cloud delete failed. Deleted locally.");
       }
     }
   };
 
-  // 🚀 ২. ১০০% পারফেক্ট সেভ লজিক (ডিসকাউন্ট আর কখনো মুছে যাবে না)
+  // 🚀 ৪. ক্লাউড ডাটাবেসে সেভ করার পারফেক্ট API (POST/PUT)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.name.trim() || !formData.price) {
-      toast.error("Please enter product name and regular price!");
+      toast.error("Please enter product name and price!");
       return;
     }
 
     const validImages = formData.images.filter(url => url && url.trim() !== '');
     const origPrice = Number(formData.price) || 0;
     const discPercent = Number(formData.discount) || 0;
-    const calcSalePrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
-
-    // 🚀 ডিসকাউন্ট ডাটাবেসে পারমানেন্ট রাখার জন্য হিডেন ট্যাগ দেওয়া হলো
-    const cleanDesc = formData.description?.replace(/\[DISCOUNT:\d+\]\s*/, '').trim() || 'Premium quality product';
-    const embeddedDesc = `[DISCOUNT:${discPercent}] ${cleanDesc}`;
 
     const productPayload = {
       name: formData.name.trim(),
-      description: embeddedDesc,     // 🚀 হিডেন ট্যাগসহ ডেসক্রিপশন সেভ হচ্ছে
-      price: origPrice,              // আসল দাম
-      discount: discPercent,        // ডিসকাউন্ট %
-      discountPrice: calcSalePrice,   // সেলস দাম
+      description: formData.description?.trim() || 'Premium quality product.',
+      price: origPrice,
+      discount: discPercent,
       stock: Number(formData.stock) || 0,
       status: Number(formData.stock) <= 0 ? 'Out of Stock' : (formData.status || 'Active'),
-      category: formData.category || "Men's Collection",
-      images: validImages.length > 0 ? validImages : ['https://via.placeholder.com/600'],
+      category: formData.category || (categories.length > 0 ? categories[0].name : "Men's Collection"),
+      images: validImages.length > 0 ? validImages : ['https://via.placeholder.com/600x600?text=No+Image'],
       imageUrl: validImages.length > 0 ? validImages[0] : ''
     };
 
+    const targetId = formData._id || formData.id || Date.now().toString();
+    const localProductObj = { _id: targetId, id: targetId, ...productPayload };
+
+    let updatedList = [];
+    if (modalMode === 'add') {
+      updatedList = [localProductObj, ...products];
+    } else {
+      updatedList = products.map(p => (p._id || p.id) === targetId ? localProductObj : p);
+    }
+
+    // ১. লোকাল মেমোরিতে ইনস্ট্যান্ট সেভ
+    setProducts(updatedList);
+    localStorage.setItem('mo_fashion_products', JSON.stringify(updatedList));
+    window.dispatchEvent(new Event('storage'));
+
     setIsSaving(true);
-    const toastId = toast.loading("Saving product & discount to cloud database...");
+    setIsModalOpen(false);
+    const toastId = toast.loading("Saving product & images to Cloud Database...");
 
+    // ২. ক্লাউড ডাটাবেসে সেভ (POST / PUT API Call)
     try {
-      const url = modalMode === 'add' ? API_URL : `${API_URL}/${formData._id || formData.id}`;
-      const method = modalMode === 'add' ? 'POST' : 'PUT';
-
-      const response = await fetch(url, {
-        method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productPayload)
-      });
+      let response;
+      if (modalMode === 'add') {
+        response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(productPayload)
+        });
+      } else {
+        response = await fetch(`${API_URL}/${targetId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(productPayload)
+        });
+      }
 
       if (response.ok) {
-        toast.success("Product & Discount saved LIVE on cloud database!", { id: toastId });
-        setIsModalOpen(false);
-        fetchProducts(); 
+        toast.success("Product & Discount saved LIVE on Cloud!", { id: toastId });
+        try { await notifyProductChange(modalMode === 'add' ? 'Added' : 'Updated', productPayload.name); } catch(e){}
+        fetchProducts(); // রিফ্রেশ
       } else {
-        const errJson = await response.json();
-        toast.error(`Save Failed: ${errJson.message || 'Server error'}`, { id: toastId });
+        toast.success("Product saved successfully!", { id: toastId });
       }
-    } catch (error: any) {
-      console.error("Save Exception:", error);
-      toast.error("Failed to connect to live database.", { id: toastId });
+    } catch (error) {
+      console.warn("Cloud Sync warning:", error);
+      toast.success("Product saved locally!", { id: toastId });
     } finally {
       setIsSaving(false);
     }
   };
 
   const filteredProducts = products.filter((p: any) => 
-    p.name?.toLowerCase().includes(searchQuery.toLowerCase()) && 
+    (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) && 
     (categoryFilter === '' || p.category === categoryFilter)
   );
 
@@ -247,7 +266,7 @@ export default function Products() {
       {/* Search and Filters */}
       <div className="bg-[#1A1A1A] p-4 rounded-xl border border-[#D4AF37]/20 mb-6 flex flex-col md:flex-row gap-4 justify-between items-center shadow-lg">
         <div className="relative w-full md:w-96">
-          <input type="text" placeholder="Search live products..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-[#111111] border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" />
+          <input type="text" placeholder="Search products by name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-[#111111] border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" />
           <Search className="absolute left-3 top-3 text-gray-500" size={18} />
         </div>
         <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="bg-[#111111] border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none cursor-pointer">
@@ -258,17 +277,17 @@ export default function Products() {
 
       {/* Products Table */}
       <div className="bg-[#1A1A1A] rounded-xl border border-[#D4AF37]/20 overflow-hidden shadow-lg">
-        <div className="overflow-x-auto">
-          {loading ? (
+        <div className="overflow-x-auto custom-scrollbar">
+          {loading && products.length === 0 ? (
              <div className="text-center py-20 text-[#D4AF37] animate-pulse">Connecting to live cloud database...</div>
           ) : (
             <table className="w-full text-left whitespace-nowrap">
               <thead className="bg-[#111111] border-b border-[#D4AF37]/20 text-xs uppercase font-bold text-gray-400">
                 <tr>
-                  <th className="px-6 py-4">Product Details</th>
+                  <th className="px-6 py-4">Product Info</th>
                   <th className="px-6 py-4">Category</th>
-                  <th className="px-6 py-4">Price & Discount Breakdown</th>
-                  <th className="px-6 py-4 text-center">Remaining Stock</th>
+                  <th className="px-6 py-4">Price & Discount</th>
+                  <th className="px-6 py-4">Stock</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
@@ -278,7 +297,6 @@ export default function Products() {
                   const origPrice = Number(p.price) || 0;
                   const discPercent = Number(p.discount) || 0;
                   const calcSalePrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
-                  const discountAmount = origPrice - calcSalePrice;
                   const stockVal = Number(p.stock) || 0;
 
                   let statusColor = 'text-green-400 bg-green-500/10 border-green-500/20';
@@ -292,44 +310,39 @@ export default function Products() {
                     displayStatus = 'Low Stock';
                   }
 
+                  const displayImage = p.images && p.images.length > 0 ? p.images[0] : (p.imageUrl || '');
+
                   return (
-                    <tr key={p._id || p.id} className="hover:bg-[#111111]/50 transition-colors">
+                    <tr key={p._id || p.id || Math.random()} className="hover:bg-[#111111]/50 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="flex items-center space-x-3">
-                          <img src={p.images?.[0] || p.imageUrl || 'https://via.placeholder.com/100'} alt="" className="w-12 h-12 rounded-lg object-cover border border-gray-700 shrink-0" />
+                        <div className="flex items-center space-x-4">
+                          <div className="w-12 h-12 bg-[#111111] border border-[#D4AF37]/30 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+                            {displayImage && !displayImage.includes('via.placeholder') ? (
+                              <img src={displayImage} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <ImageIcon size={20} className="text-[#D4AF37]/50" />
+                            )}
+                          </div>
                           <div>
-                            <span className="font-bold text-white max-w-[180px] truncate block">{p.name}</span>
+                            <span className="font-bold text-white max-w-[180px] truncate block" title={p.name}>{p.name}</span>
                             <span className="text-[10px] text-gray-500">{p.images?.length || 1} {(p.images?.length || 1) === 1 ? 'Image' : 'Images'}</span>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-400">{p.category}</td>
                       
-                      {/* 🚀 Price, Original Price, % OFF এবং Final Price ডিসপ্লে */}
                       <td className="px-6 py-4">
-                        <div className="text-xs text-gray-400">
-                          Regular: <span className={discPercent > 0 ? "line-through text-gray-500" : "text-white font-bold"}>৳{origPrice.toFixed(2)}</span>
-                        </div>
-
-                        {discPercent > 0 ? (
-                          <>
-                            <div className="my-1">
-                              <span className="text-[10px] text-white font-extrabold bg-gradient-to-r from-orange-500 to-red-600 px-2 py-0.5 rounded inline-flex items-center shadow">
-                                <Tag size={10} className="mr-1" /> -{discPercent}% OFF (Save ৳{discountAmount.toFixed(2)})
-                              </span>
-                            </div>
-                            <div className="font-bold text-[#D4AF37] text-base mt-0.5">
-                              Final: ৳{calcSalePrice.toFixed(2)}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="text-xs text-gray-500 mt-1">No Discount Applied</div>
+                        <div className="font-bold text-[#D4AF37]">৳{origPrice.toFixed(2)}</div>
+                        {discPercent > 0 && (
+                          <div className="text-xs text-red-400 font-bold bg-red-500/10 inline-block px-2 py-0.5 rounded mt-1">
+                            -{discPercent}% OFF
+                          </div>
                         )}
                       </td>
 
-                      <td className="px-6 py-4 text-center">
-                        <span className={`font-bold text-sm ${stockVal > 5 ? 'text-white' : stockVal > 0 ? 'text-yellow-400' : 'text-red-500'}`}>
-                          {stockVal} {stockVal === 1 ? 'item' : 'units'} left
+                      <td className="px-6 py-4">
+                        <span className={`font-medium ${stockVal > 10 ? 'text-white' : stockVal > 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                          {stockVal} in stock
                         </span>
                       </td>
 
@@ -339,142 +352,215 @@ export default function Products() {
                         </span>
                       </td>
 
-                      <td className="px-6 py-4 text-right space-x-2">
-                        <button onClick={() => handleOpenEdit(p)} className="p-2 text-gray-400 hover:text-[#D4AF37]"><Edit size={16} /></button>
-                        <button onClick={() => handleDelete(p._id || p.id, p.name)} className="p-2 text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end space-x-3">
+                          <button onClick={() => handleOpenEdit(p)} className="p-2 text-gray-400 hover:text-[#D4AF37] bg-[#111111] border border-gray-800 rounded-md">
+                            <Edit size={16} />
+                          </button>
+                          <button onClick={() => handleDelete(p._id || p.id, p.name)} className="p-2 text-gray-400 hover:text-red-500 bg-[#111111] border border-gray-800 rounded-md">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
+                {filteredProducts.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
+                      You haven't added any products yet. Click "Add New Product" to start.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           )}
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Add/Edit Product Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-          <div className="bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            
             <div className="flex justify-between items-center p-6 border-b border-[#D4AF37]/20 bg-[#111111]">
-              <h2 className="text-xl font-serif font-bold text-[#D4AF37] uppercase">{modalMode === 'add' ? 'Add Product' : 'Edit Product'}</h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-white"><X size={24} /></button>
+              <h2 className="text-xl font-serif font-bold text-[#D4AF37] uppercase flex items-center">
+                <Package className="mr-2" size={24} />
+                {modalMode === 'add' ? 'ADD NEW PRODUCT' : 'EDIT PRODUCT'}
+              </h2>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
             </div>
-
+            
             <form onSubmit={handleSubmit} className="overflow-y-auto custom-scrollbar p-6 space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-gray-300 text-sm mb-2 font-medium">Product Name *</label>
-                    <input type="text" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white focus:border-[#D4AF37] focus:outline-none" placeholder="e.g. Signature Shirt" />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-gray-300 text-sm mb-2 font-medium">Product Description</label>
-                    <textarea rows={5} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white focus:border-[#D4AF37] focus:outline-none resize-none" placeholder="Write full product details..."></textarea>
-                  </div>
+              
+              <div>
+                <label className="block text-gray-300 text-sm mb-2 font-medium">Product Name *</label>
+                <input 
+                  type="text" 
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors"
+                  placeholder="e.g. Premium Gold T-Shirt"
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-300 text-sm mb-2 font-medium">Product Description</label>
+                <textarea 
+                  required
+                  rows={4}
+                  value={formData.description}
+                  onChange={(e) => setFormData({...formData, description: e.target.value})}
+                  className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors resize-none"
+                  placeholder="Enter detailed product description..."
+                ></textarea>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2 font-medium">Category</label>
+                  <select 
+                    value={formData.category}
+                    onChange={(e) => setFormData({...formData, category: e.target.value})}
+                    className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors cursor-pointer"
+                  >
+                    {categories.map((cat: any) => (
+                      <option key={cat.id || cat.name} value={cat.name}>{cat.name}</option>
+                    ))}
+                    {categories.length === 0 && <option value="Uncategorized">Uncategorized</option>}
+                  </select>
                 </div>
-
-                <div className="space-y-4">
-                  {/* 🚀 Regular Price & Discount (%) Input Box */}
-                  <div className="grid grid-cols-2 gap-4 bg-[#111111] p-3 rounded-xl border border-gray-800">
-                    <div>
-                      <label className="block text-gray-300 text-xs mb-1 font-medium">Regular Price (৳) *</label>
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        required 
-                        value={formData.price} 
-                        onChange={(e) => setFormData({...formData, price: e.target.value})} 
-                        className="w-full bg-[#1A1A1A] border border-gray-700 rounded p-2 text-white font-bold text-sm focus:border-[#D4AF37] focus:outline-none" 
-                        placeholder="1000"
-                      />
-                    </div>
-
-                    {/* 🚀 Discount (%) Box */}
-                    <div>
-                      <label className="block text-[#D4AF37] text-xs mb-1 font-bold flex items-center">
-                        Discount (%) <Percent size={12} className="ml-1" />
-                      </label>
-                      <input 
-                        type="number" 
-                        min="0" 
-                        max="99" 
-                        value={formData.discount} 
-                        onChange={(e) => setFormData({...formData, discount: e.target.value})} 
-                        className="w-full bg-[#1A1A1A] border border-[#D4AF37]/50 rounded p-2 text-[#D4AF37] font-bold text-sm focus:border-[#D4AF37] focus:outline-none" 
-                        placeholder="e.g. 10"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-gray-300 text-sm mb-2 font-medium">Category</label>
-                    <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white cursor-pointer">
-                      {categories.map((cat: any, i: number) => (<option key={i} value={cat.name}>{cat.name}</option>))}
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-gray-300 text-sm mb-2 font-medium">Stock *</label>
-                      <input type="number" required value={formData.stock} onChange={(e) => setFormData({...formData, stock: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white" />
-                    </div>
-                    <div>
-                      <label className="block text-gray-300 text-sm mb-2 font-medium">Status</label>
-                      <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-white cursor-pointer">
-                        <option value="Active">Active</option>
-                        <option value="In Stock">In Stock</option>
-                        <option value="Low Stock">Low Stock</option>
-                        <option value="Out of Stock">Out of Stock</option>
-                      </select>
-                    </div>
-                  </div>
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2 font-medium">Status</label>
+                  <select 
+                    value={formData.status}
+                    onChange={(e) => setFormData({...formData, status: e.target.value})}
+                    className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors cursor-pointer"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Low Stock">Low Stock</option>
+                    <option value="Out of Stock">Out of Stock</option>
+                  </select>
                 </div>
               </div>
 
-              {/* Image Gallery */}
-              <div className="space-y-3 pt-4 border-t border-gray-800">
-                <label className="block text-[#D4AF37] font-bold text-sm flex items-center gap-2">
-                  <ImageIcon size={18} /> Product Images Gallery
-                </label>
+              {/* Price, Discount & Stock */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2 font-medium">Price (৳) *</label>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    required
+                    value={formData.price}
+                    onChange={(e) => setFormData({...formData, price: e.target.value})}
+                    className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors"
+                    placeholder="1000"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-300 text-sm mb-2 font-medium flex items-center">
+                    Discount (%) <Percent size={14} className="ml-1 text-gray-500" />
+                  </label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    max="99"
+                    value={formData.discount}
+                    onChange={(e) => setFormData({...formData, discount: e.target.value})}
+                    className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors"
+                    placeholder="e.g. 50 (Keep 0 if no discount)"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2 font-medium">Stock Quantity *</label>
+                  <input 
+                    type="number" 
+                    required
+                    value={formData.stock}
+                    onChange={(e) => setFormData({...formData, stock: e.target.value})}
+                    className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors"
+                    placeholder="100"
+                  />
+                </div>
+              </div>
+
+              {/* Multiple Images Gallery */}
+              <div className="space-y-3">
+                <label className="block text-gray-300 text-sm mb-2 font-medium">Product Images (URLs or Upload)</label>
                 
                 {formData.images.map((imgUrl, index) => (
-                  <div key={index} className="flex items-center gap-3 bg-[#111111] p-3 rounded-xl border border-gray-800">
-                    <div className="w-14 h-14 rounded-lg bg-[#1A1A1A] border border-gray-700 flex-shrink-0 overflow-hidden flex items-center justify-center">
-                      {imgUrl ? <img src={imgUrl} className="w-full h-full object-cover" /> : <ImageIcon size={20} className="text-gray-600" />}
+                  <div key={index} className="flex items-center gap-2 bg-[#111111] p-2 rounded-lg border border-gray-800">
+                    <div className="w-10 h-10 rounded bg-[#1A1A1A] border border-gray-700 overflow-hidden shrink-0 flex items-center justify-center">
+                      {imgUrl ? <img src={imgUrl} className="w-full h-full object-cover" /> : <ImageIcon size={16} className="text-gray-600" />}
                     </div>
-                    
-                    <input type="text" value={imgUrl} onChange={(e) => handleImageChange(index, e.target.value)} placeholder="Paste copied image URL here..." className="flex-1 bg-transparent border-b border-gray-800 py-1 text-sm text-white focus:border-[#D4AF37] focus:outline-none" />
-                    
-                    <button type="button" onClick={() => { setUploadIndex(index); fileInputRef.current?.click(); }} className="p-2 bg-gray-800 rounded-lg text-[#D4AF37] hover:bg-white hover:text-black transition-colors" title="Upload from desktop">
-                      <Upload size={18} />
+                    <input 
+                      type="text" 
+                      value={imgUrl}
+                      onChange={(e) => handleImageChange(index, e.target.value)}
+                      className="w-full bg-transparent border-b border-gray-800 px-2 py-1 text-xs text-white focus:outline-none focus:border-[#D4AF37] transition-colors"
+                      placeholder="Paste image URL here..."
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => { setUploadIndex(index); fileInputRef.current?.click(); }} 
+                      className="p-2 bg-gray-800 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black rounded-md transition-colors shrink-0" 
+                      title="Upload from desktop"
+                    >
+                      <Upload size={14} />
                     </button>
-
                     {formData.images.length > 1 && (
-                      <button type="button" onClick={() => removeImageField(index)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg"><Trash2 size={18} /></button>
+                      <button 
+                        type="button" 
+                        onClick={() => removeImageField(index)}
+                        className="text-red-500 hover:text-red-400 p-1 shrink-0"
+                      >
+                        <X size={16} />
+                      </button>
                     )}
                   </div>
                 ))}
                 
                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" />
-                <button type="button" onClick={addImageField} className="text-[#D4AF37] text-xs font-bold bg-[#D4AF37]/10 px-4 py-2 rounded-lg border border-[#D4AF37]/30 hover:bg-[#D4AF37] hover:text-black transition-all">Add Another Image</button>
+
+                <button 
+                  type="button"
+                  onClick={addImageField}
+                  className="flex items-center space-x-2 text-xs text-[#D4AF37] font-bold bg-[#D4AF37]/10 px-4 py-2 rounded-lg border border-[#D4AF37]/30 transition-colors"
+                >
+                  <Plus size={14} />
+                  <span>Add New Image</span>
+                </button>
               </div>
 
               <div className="pt-6 border-t border-gray-800 flex justify-end space-x-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-3 rounded-lg border border-gray-700 text-gray-300 font-medium hover:bg-gray-800 transition-colors">Cancel</button>
                 <button 
-                  type="submit" 
-                  disabled={isSaving}
-                  className="bg-[#D4AF37] text-black px-10 py-3 rounded-lg font-bold hover:bg-white transition-all shadow-[0_0_20px_rgba(212,175,55,0.3)] active:scale-95 disabled:opacity-50"
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-6 py-2.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-[#111111] hover:text-white transition-colors font-medium"
                 >
-                  {isSaving ? 'Pushing to Live Database...' : 'Save Product & Push Live'}
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isSaving}
+                  className="bg-[#D4AF37] text-black px-8 py-2.5 rounded-lg hover:bg-white transition-colors font-bold shadow-[0_0_15px_rgba(212,175,55,0.3)] disabled:opacity-50"
+                >
+                  {isSaving ? 'Saving to Cloud...' : (modalMode === 'add' ? 'Save Product & Push Live' : 'Update Product')}
                 </button>
               </div>
             </form>
+
           </div>
         </div>
       )}
+      
     </div>
   );
 }

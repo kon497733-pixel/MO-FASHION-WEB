@@ -8,7 +8,6 @@ import { useCartStore } from '../../store/useCartStore';
 export default function CartPage() {
   const navigate = useNavigate();
 
-  // 🚀 TS Error Fixed by using 'any' type for the entire store
   const cartStore = useCartStore() as any;
   const { items, appliedCoupon, applyCoupon, removeCoupon } = cartStore;
 
@@ -25,7 +24,6 @@ export default function CartPage() {
   });
 
   useEffect(() => {
-    // কার্ট পেজে আসলে আগের কুপন মুছে যাবে, কাস্টমারকে আবার দিতে হবে
     if (typeof removeCoupon === 'function') removeCoupon();
 
     const savedProducts = localStorage.getItem('mo_fashion_products');
@@ -35,7 +33,6 @@ export default function CartPage() {
     if (savedSettings) setSiteSettings(JSON.parse(savedSettings));
   }, []);
 
-  // 🚀 Fallback Functions for Cart Operations
   const safeIncrease = (id: string, size: string, color: string) => {
     if (cartStore.increaseQuantity) cartStore.increaseQuantity(id);
     else if (cartStore.updateQuantity) cartStore.updateQuantity(id, size, color, 'increase');
@@ -46,10 +43,27 @@ export default function CartPage() {
     else if (cartStore.updateQuantity) cartStore.updateQuantity(id, size, color, 'decrease');
   };
 
+  // 🚀 FIX: ডিলিট ফাংশন ১০০% গ্যারান্টি দিয়ে কাজ করার জন্য ম্যানুয়াল লজিক বসানো হলো
   const safeRemove = (id: string, size: string, color: string) => {
-    if (cartStore.removeFromCart) {
-      try { cartStore.removeFromCart(id); } 
-      catch (e) { cartStore.removeFromCart(id, size, color); }
+    try {
+      // প্রথমে স্টোরের ফাংশন কল করার চেষ্টা করবে
+      if (cartStore.removeFromCart) {
+        cartStore.removeFromCart(id);
+      }
+      
+      // এরপর ১০০% কনফার্ম ডিলিটের জন্য সরাসরি লোকাল স্টোরেজ থেকে ডিলিট করবে
+      const existingCart = JSON.parse(localStorage.getItem('mo_fashion_cart_storage') || '{}');
+      if (existingCart && existingCart.state && existingCart.state.cartItems) {
+        const newCartItems = existingCart.state.cartItems.filter(
+          (item: any) => !(item.id === id && item.size === size && item.color === color)
+        );
+        existingCart.state.cartItems = newCartItems;
+        localStorage.setItem('mo_fashion_cart_storage', JSON.stringify(existingCart));
+        // স্টোর ফোর্স রিলোড করার জন্য পেজ রিফ্রেশ
+        window.location.reload(); 
+      }
+    } catch (e) {
+      console.error("Delete failed:", e);
     }
   };
 
@@ -57,7 +71,6 @@ export default function CartPage() {
   let totalProductDiscount = 0;
   let subtotalAfterProductDiscount = 0;
 
-  // 🚀 Enriched Cart Items with Real-time DB matching
   const enrichedCartItems = (items || []).map((cartItem: any) => {
     const dbProduct = dbProducts.find((p) => String(p.id || p._id) === String(cartItem.id));
     
@@ -75,7 +88,6 @@ export default function CartPage() {
     totalProductDiscount += itemDiscountTotal;
     subtotalAfterProductDiscount += itemSubtotal;
 
-    // 🚀 Picture Issue Fixed: Taking image from cartItem instead of DB to prevent missing images
     return {
       ...cartItem,
       originalPrice,
@@ -87,7 +99,6 @@ export default function CartPage() {
     };
   });
 
-  // 🚀 Coupon Discount Calculation
   let couponDiscountAmount = 0;
   if (appliedCoupon) {
     if (appliedCoupon.discountType === 'percentage') {
@@ -100,7 +111,6 @@ export default function CartPage() {
     }
   }
 
-  // 🚀 Shipping & Tax Calculation
   const shippingInside = Number(siteSettings.shippingInside) || 60;
   const shippingOutside = Number(siteSettings.shippingOutside) || 150;
   const shipping = enrichedCartItems.length > 0 ? (deliveryArea === 'inside' ? shippingInside : shippingOutside) : 0;
@@ -111,7 +121,6 @@ export default function CartPage() {
   
   const grandTotal = Math.max(0, subtotalAfterCoupon + shipping + taxAmount);
 
-  // Apply Coupon Logic
   const handleApplyCoupon = () => {
     if (!couponInput.trim()) {
       toast.error('Please enter a coupon code!');
@@ -140,7 +149,6 @@ export default function CartPage() {
       </Helmet>
 
       <div className="container mx-auto px-4 max-w-7xl">
-        {/* Amazon-style Breadcrumb / Secure Checkout Header */}
         <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-800">
           <h1 className="text-3xl md:text-4xl font-serif font-bold text-[#D4AF37] tracking-wider uppercase">
             Your Shopping Cart
@@ -158,17 +166,15 @@ export default function CartPage() {
             <h2 className="text-3xl font-serif font-bold text-white mb-4">Your MO Cart is Empty</h2>
             <p className="text-gray-400 mb-10 text-lg">Indulge in luxury. Discover our premium collections and elevate your style.</p>
             <Link to="/categories" className="inline-block bg-transparent border-2 border-[#D4AF37] text-[#D4AF37] px-10 py-3.5 rounded-full hover:bg-[#D4AF37] hover:text-black transition-all duration-300 font-bold uppercase tracking-widest shadow-[0_0_20px_rgba(212,175,55,0.15)] hover:shadow-[0_0_30px_rgba(212,175,55,0.4)]">
-              Continue Shopping
+              Explore Collections
             </Link>
           </div>
         ) : (
           <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
             
-            {/* 🚀 Left Side: Luxury Cart Items */}
             <div className="lg:w-2/3 space-y-6">
               
-              {/* Trust Badges */}
-              <div className="bg-[#111111] border border-gray-800 rounded-xl p-4 flex flex-wrap gap-4 items-center justify-around text-xs sm:text-sm text-gray-400">
+              <div className="bg-[#111111] border border-gray-800 rounded-xl p-4 flex items-center justify-around text-xs sm:text-sm text-gray-400">
                 <span className="flex items-center"><RotateCcw size={16} className="mr-2 text-[#D4AF37]"/> Free 14-Day Returns</span>
                 <span className="flex items-center"><Truck size={16} className="mr-2 text-[#D4AF37]"/> Fast Delivery</span>
                 <span className="flex items-center"><ShieldCheck size={16} className="mr-2 text-[#D4AF37]"/> 100% Authentic</span>
@@ -176,102 +182,87 @@ export default function CartPage() {
 
               <div className="space-y-4">
                 {enrichedCartItems.map((item: any, index: number) => (
-                  <div key={index} className="bg-[#111111] p-5 sm:p-6 rounded-2xl border border-gray-800 flex items-start gap-6 shadow-xl hover:border-[#D4AF37]/40 transition-colors relative group">
+                  <div key={index} className="bg-[#111111] p-5 sm:p-6 rounded-2xl border border-gray-800 flex flex-col sm:flex-row items-center gap-6 shadow-xl hover:border-[#D4AF37]/40 transition-colors relative overflow-hidden group">
                     
-                    {/* Hover Glow Effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-[#D4AF37]/0 via-[#D4AF37]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-2xl"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#D4AF37]/0 via-[#D4AF37]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
 
-                    {/* 🚀 Product Image (100% visible now) */}
-                    <Link to={`/product/${item.id}`} className="w-24 h-24 sm:w-32 sm:h-32 bg-[#0a0a0a] rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden relative shadow-inner">
+                    <Link to={`/product/${item.id}`} className="w-full sm:w-36 h-36 bg-[#0a0a0a] rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden relative shadow-inner">
                       {item.image && item.image !== 'No Image' ? (
                         <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                       ) : (
                         <ImageIcon size={32} className="text-gray-700" />
                       )}
                       {item.discountPercent > 0 && (
-                        <div className="absolute top-0 left-0 bg-gradient-to-r from-red-600 to-orange-500 text-white text-[10px] font-black px-2 py-1 rounded-br-lg shadow-md uppercase tracking-wider">
+                        <div className="absolute top-2 left-2 bg-gradient-to-r from-red-600 to-orange-500 text-white text-[10px] font-black px-2 py-1 rounded shadow-md uppercase tracking-wider">
                           {item.discountPercent}% OFF
                         </div>
                       )}
                     </Link>
                     
-                    {/* Product Info & Controls */}
-                    <div className="flex-grow w-full flex flex-col justify-between min-h-[6rem] sm:min-h-[8rem]">
+                    <div className="flex-grow w-full flex flex-col justify-center">
+                      <Link to={`/product/${item.id}`}>
+                        <h3 className="font-serif font-bold text-xl text-white hover:text-[#D4AF37] transition-colors cursor-pointer line-clamp-2 leading-tight">
+                          {item.name}
+                        </h3>
+                      </Link>
                       
-                      {/* Name and Delete Button Row */}
-                      <div className="flex justify-between items-start">
-                        <Link to={`/product/${item.id}`}>
-                          <h3 className="font-serif font-bold text-lg sm:text-xl text-white hover:text-[#D4AF37] transition-colors cursor-pointer line-clamp-2 leading-tight pr-8">
-                            {item.name}
-                          </h3>
-                        </Link>
-                        {/* 🚀 Delete Button on Top Right */}
-                        <button 
-                          onClick={() => {
-                            safeRemove(item.id, item.size, item.color);
-                            toast.success('Item removed from cart.');
-                          }}
-                          className="absolute top-4 right-4 text-gray-500 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-full z-10"
-                          title="Remove Item"
-                        >
-                          <Trash2 size={20} />
-                        </button>
-                      </div>
-                      
-                      <p className="text-xs sm:text-sm text-gray-500 mt-2 font-medium">
+                      <p className="text-sm text-gray-500 mb-4 mt-2 font-medium">
                         Color: <span className="text-gray-300">{item.color}</span> <span className="mx-2">|</span> 
                         Size: <span className="text-gray-300">{item.size}</span>
                       </p>
                       
-                      <div className="flex flex-col sm:flex-row sm:items-end justify-between mt-auto pt-4 gap-4">
-                        
-                        {/* Price Details */}
-                        <div className="flex flex-col">
-                          <div className="flex items-baseline space-x-2">
-                            <span className="text-[#D4AF37] font-black text-xl sm:text-2xl">{siteSettings.currency} {item.sellingPrice.toFixed(2)}</span>
-                            {item.discountPercent > 0 && (
-                              <span className="text-gray-600 line-through text-xs sm:text-sm font-medium">{siteSettings.currency} {item.originalPrice.toFixed(2)}</span>
-                            )}
-                          </div>
-                        </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="text-[#D4AF37] font-black text-2xl">{siteSettings.currency} {item.sellingPrice.toFixed(2)}</span>
+                        {item.discountPercent > 0 && (
+                          <span className="text-gray-600 line-through text-sm font-medium">{siteSettings.currency} {item.originalPrice.toFixed(2)}</span>
+                        )}
+                      </div>
+                    </div>
 
-                        {/* 🚀 Quantity Controller & Subtotal Layout Fixed */}
-                        <div className="flex flex-col items-end">
-                          <div className="flex items-center border border-gray-700 rounded-full bg-[#0a0a0a] p-1 shadow-inner">
-                            <button 
-                              onClick={() => safeDecrease(item.id, item.size, item.color)} 
-                              className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-800 hover:text-white transition-colors disabled:opacity-30"
-                              disabled={item.quantity <= 1}
-                            >
-                              <Minus size={14} />
-                            </button>
-                            <span className="font-bold w-6 sm:w-8 text-center text-white text-sm sm:text-base">{item.quantity}</span>
-                            <button 
-                              onClick={() => safeIncrease(item.id, item.size, item.color)} 
-                              className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-gray-400 hover:bg-[#D4AF37]/20 hover:text-[#D4AF37] transition-colors disabled:opacity-30"
-                              disabled={item.quantity >= item.stock}
-                            >
-                              <Plus size={14} />
-                            </button>
-                          </div>
-                          {/* Subtotal right below the counter */}
-                          <div className="text-right mt-2 pr-2">
-                            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mr-2">Subtotal</span>
-                            <span className="font-bold text-white tracking-wide text-sm">{siteSettings.currency} {item.itemSubtotal.toFixed(2)}</span>
-                          </div>
-                        </div>
+                    <div className="flex sm:flex-col items-center justify-between w-full sm:w-auto sm:items-end gap-4 sm:h-36 py-2 z-10">
+                      {/* 🚀 Delete Button Fix */}
+                      <button 
+                        onClick={() => {
+                          safeRemove(item.id, item.size, item.color);
+                          toast.success('Item removed from cart.');
+                        }}
+                        className="text-gray-500 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-full"
+                        title="Remove Item"
+                      >
+                        <Trash2 size={20} />
+                      </button>
 
+                      <div className="flex items-center border border-gray-700 rounded-full bg-[#0a0a0a] p-1 shadow-inner">
+                        <button 
+                          onClick={() => safeDecrease(item.id, item.size, item.color)} 
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-800 hover:text-white transition-colors disabled:opacity-30"
+                          disabled={item.quantity <= 1}
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <span className="font-bold w-8 text-center text-white text-sm">{item.quantity}</span>
+                        <button 
+                          onClick={() => safeIncrease(item.id, item.size, item.color)} 
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-[#D4AF37]/20 hover:text-[#D4AF37] transition-colors disabled:opacity-30"
+                          disabled={item.quantity >= item.stock}
+                        >
+                          <Plus size={14} />
+                        </button>
                       </div>
 
+                      <div className="text-right hidden sm:block">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Subtotal</p>
+                        <p className="font-bold text-white tracking-wide">{siteSettings.currency} {item.itemSubtotal.toFixed(2)}</p>
+                      </div>
                     </div>
+
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* 🚀 Right Side: Premium Order Summary */}
             <div className="lg:w-1/3">
-              <div className="bg-[#111111] p-6 sm:p-8 rounded-2xl border border-[#D4AF37]/30 sticky top-24 shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
+              <div className="bg-[#111111] p-8 rounded-2xl border border-[#D4AF37]/30 sticky top-24 shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
                 
                 <h2 className="text-xl font-serif font-bold text-white mb-6 uppercase tracking-widest flex items-center">
                   <span className="w-1.5 h-6 bg-[#D4AF37] mr-3 rounded-full"></span>
@@ -284,7 +275,6 @@ export default function CartPage() {
                     <span className="text-white">{siteSettings.currency} {totalOriginalPrice.toFixed(2)}</span>
                   </div>
 
-                  {/* 🚀 Admin Product Discount Display */}
                   {totalProductDiscount > 0 && (
                     <div className="flex justify-between text-[#D4AF37]">
                       <span className="flex items-center"><Tag size={14} className="mr-1"/> Product Discount</span>
@@ -292,22 +282,21 @@ export default function CartPage() {
                     </div>
                   )}
 
-                  {/* 🚀 Amazon Style Delivery Area Selector with Text Fixed */}
-                  <div className="border-y border-gray-800 py-5 my-4">
-                    <p className="text-[11px] text-gray-500 uppercase tracking-widest mb-4 font-bold flex items-center">
+                  <div className="border-y border-gray-800 py-4 my-2">
+                    <p className="text-[11px] text-gray-500 uppercase tracking-widest mb-3 font-bold flex items-center">
                       <Truck size={14} className="mr-2 text-gray-600"/> Select Delivery Area
                     </p>
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       <label className="flex items-center space-x-3 cursor-pointer group">
-                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${deliveryArea === 'inside' ? 'border-[#D4AF37] bg-[#D4AF37]/20' : 'border-gray-600'}`}>
-                          {deliveryArea === 'inside' && <div className="w-2.5 h-2.5 rounded-full bg-[#D4AF37]"></div>}
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${deliveryArea === 'inside' ? 'border-[#D4AF37] bg-[#D4AF37]/20' : 'border-gray-600'}`}>
+                          {deliveryArea === 'inside' && <div className="w-2 h-2 rounded-full bg-[#D4AF37]"></div>}
                         </div>
                         <input type="radio" name="area" value="inside" className="hidden" checked={deliveryArea === 'inside'} onChange={() => setDeliveryArea('inside')} />
                         <span className="text-gray-300 group-hover:text-white transition-colors">Inside Chattogram ({siteSettings.currency} {shippingInside})</span>
                       </label>
                       <label className="flex items-center space-x-3 cursor-pointer group">
-                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${deliveryArea === 'outside' ? 'border-[#D4AF37] bg-[#D4AF37]/20' : 'border-gray-600'}`}>
-                          {deliveryArea === 'outside' && <div className="w-2.5 h-2.5 rounded-full bg-[#D4AF37]"></div>}
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${deliveryArea === 'outside' ? 'border-[#D4AF37] bg-[#D4AF37]/20' : 'border-gray-600'}`}>
+                          {deliveryArea === 'outside' && <div className="w-2 h-2 rounded-full bg-[#D4AF37]"></div>}
                         </div>
                         <input type="radio" name="area" value="outside" className="hidden" checked={deliveryArea === 'outside'} onChange={() => setDeliveryArea('outside')} />
                         <span className="text-gray-300 group-hover:text-white transition-colors">Outside Chattogram ({siteSettings.currency} {shippingOutside})</span>
@@ -327,35 +316,25 @@ export default function CartPage() {
                     </div>
                   )}
 
-                  {/* 🚀 Applied Coupon Display */}
                   {appliedCoupon && (
-                    <div className="flex justify-between items-center text-green-500 bg-green-500/10 p-4 rounded-xl border border-green-500/20 mt-4">
+                    <div className="flex justify-between items-center text-green-500 bg-green-500/10 p-3 rounded-lg border border-green-500/20 mt-2">
                       <div className="flex flex-col">
-                        <span className="flex items-center font-bold text-xs uppercase tracking-wider">
-                          <Ticket size={14} className="mr-1.5"/> Code: {appliedCoupon.code}
-                        </span>
+                        <span className="flex items-center font-bold text-xs uppercase tracking-wider"><Ticket size={14} className="mr-1.5"/> Code: {appliedCoupon.code}</span>
                         <button onClick={() => { if(typeof removeCoupon === 'function') removeCoupon(); toast.success('Coupon removed!'); }} className="text-[10px] text-gray-400 hover:text-red-400 hover:underline text-left mt-1.5 uppercase tracking-wider">Remove Coupon</button>
                       </div>
-                      <div className="text-right">
-                        <span className="font-bold block text-sm">-{siteSettings.currency} {couponDiscountAmount.toFixed(2)}</span>
-                        {appliedCoupon.discountType === 'percentage' && (
-                          <span className="text-[10px] opacity-70">({appliedCoupon.discountValue}%)</span>
-                        )}
-                      </div>
+                      <span className="font-bold">-{siteSettings.currency} {couponDiscountAmount.toFixed(2)}</span>
                     </div>
                   )}
                 </div>
 
-                {/* Grand Total */}
                 <div className="border-t-2 border-gray-800 pt-5 mb-8">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-2">
+                  <div className="flex justify-between items-end">
                     <span className="font-serif font-bold text-lg text-gray-300 uppercase tracking-widest">Total Amount</span>
                     <span className="font-black text-3xl text-[#D4AF37]">{siteSettings.currency} {grandTotal.toFixed(2)}</span>
                   </div>
-                  <p className="text-[10px] text-gray-500 mt-2 sm:text-right">Inclusive of all taxes & fees</p>
+                  <p className="text-[10px] text-right text-gray-500 mt-1">Inclusive of all taxes & fees</p>
                 </div>
 
-                {/* Coupon Input */}
                 {!appliedCoupon && (
                   <div className="mb-6 relative">
                     <div className="flex items-stretch h-12 rounded-lg overflow-hidden border border-gray-700 focus-within:border-[#D4AF37] transition-colors shadow-inner">
@@ -368,7 +347,7 @@ export default function CartPage() {
                       />
                       <button 
                         onClick={handleApplyCoupon}
-                        className="bg-gray-800 hover:bg-[#D4AF37] text-white hover:text-black px-6 transition-all duration-300 font-bold uppercase tracking-widest text-xs border-l border-gray-700"
+                        className="bg-gray-800 hover:bg-[#D4AF37] text-white hover:text-black px-6 transition-all duration-300 font-bold uppercase tracking-widest text-xs"
                       >
                         Apply
                       </button>
@@ -376,7 +355,6 @@ export default function CartPage() {
                   </div>
                 )}
 
-                {/* Checkout Button */}
                 <button 
                   onClick={() => {
                     localStorage.setItem('mo_selected_delivery_area', deliveryArea);
@@ -388,6 +366,11 @@ export default function CartPage() {
                   <ArrowRight size={20} strokeWidth={3} />
                 </button>
                 
+                <div className="text-center mt-6">
+                  <Link to="/categories" className="text-xs text-gray-500 hover:text-white uppercase tracking-widest font-bold transition-colors border-b border-transparent hover:border-white pb-0.5">
+                    Continue Shopping
+                  </Link>
+                </div>
               </div>
             </div>
 
