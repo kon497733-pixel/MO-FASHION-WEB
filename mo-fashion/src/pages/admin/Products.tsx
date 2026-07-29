@@ -14,10 +14,34 @@ export default function Products() {
   // 🚀 মঙ্গোডিবি ক্লাউড এপিআই লিঙ্ক
   const API_URL = 'http://localhost:5000/api/products';
 
+  // 🚀 ১. পুরনো ৪টি ডামি প্রোডাক্ট অটোমেটিক মুছে ফেলার ফিল্টার (Sanitizer)
+  const sanitizeProducts = (productList: any[]) => {
+    if (!Array.isArray(productList)) return [];
+    return productList.filter((p: any) => {
+      if (!p || !p.name) return false;
+      const nameLower = String(p.name).toLowerCase();
+      // আগের ৪টি পুরনো ডামি প্রোডাক্টের নাম ফিল্টার করা হলো
+      const isOldDummy = nameLower.includes('premium gold t-shirt') || 
+                          nameLower.includes('black signature hoodie') || 
+                          nameLower.includes('classic denim jacket') || 
+                          nameLower.includes('luxury golden watch') ||
+                          nameLower.includes('premium signature t-shirt');
+      return !isOldDummy;
+    });
+  };
+
   const [products, setProducts] = useState<any[]>(() => {
     const saved = localStorage.getItem('mo_fashion_products');
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        return sanitizeProducts(JSON.parse(saved));
+      } catch (e) {
+        return [];
+      }
+    }
+    return []; 
   });
+
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -32,29 +56,32 @@ export default function Products() {
     price: '', discount: '0', stock: '', status: 'Active', images: [''],
   });
 
-  // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম প্রোডাক্ট ফেচ করা
+  // 🚀 ২. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম প্রোডাক্ট ফেচ ও ফিল্টার করা
   const fetchProducts = async () => {
-    // ১. লোকালস্টোরেজ থেকে ইনস্ট্যান্ট লোড
+    // ১. লোকালস্টোরেজ থেকে ডাটা নিয়ে ফিল্টার করা
     const savedLocal = localStorage.getItem('mo_fashion_products');
     if (savedLocal) {
       try {
-        setProducts(JSON.parse(savedLocal));
+        const cleanLocal = sanitizeProducts(JSON.parse(savedLocal));
+        setProducts(cleanLocal);
+        localStorage.setItem('mo_fashion_products', JSON.stringify(cleanLocal));
       } catch (e) {}
     }
 
-    // ২. ক্লাউড ডাটাবেস থেকে লাইভ সিঙ্ক
+    // ২. ক্লাউড ডাটাবেস থেকে লাইভ সিঙ্ক করা
     try {
       setLoading(true);
       const response = await fetch(API_URL);
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          setProducts(data);
-          localStorage.setItem('mo_fashion_products', JSON.stringify(data));
+          const cleanCloud = sanitizeProducts(data);
+          setProducts(cleanCloud);
+          localStorage.setItem('mo_fashion_products', JSON.stringify(cleanCloud));
         }
       }
     } catch (error) {
-      console.warn("Backend API offline, using cached local products.");
+      console.warn("Backend API offline, using cleaned local products.");
     } finally {
       setLoading(false);
     }
@@ -97,7 +124,7 @@ export default function Products() {
     setIsModalOpen(true);
   };
 
-  // 🚀 ২. আল্ট্রা-লাইটওয়েট ইমেজ কমপ্রেশন (কম্পিউটার থেকে ছবি আপলোডের জন্য)
+  // 🚀 ৩. আল্ট্রা-লাইটওয়েট ইমেজ কমপ্রেশন
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && uploadIndex !== null) {
@@ -140,17 +167,15 @@ export default function Products() {
     setFormData({ ...formData, images: updatedImages });
   };
 
-  // 🚀 ৩. ক্লাউড ডাটাবেস থেকে প্রোডাক্ট ডিলিট করার API কল
+  // 🚀 ৪. ডিলিট লজিক
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
-      // ১. লোকাল ইনস্ট্যান্ট রিমুভ
       const remaining = products.filter(p => (p._id || p.id) !== id);
       setProducts(remaining);
       localStorage.setItem('mo_fashion_products', JSON.stringify(remaining));
 
       toast.success("Product deleted!");
 
-      // ২. ক্লাউড থেকে ডিলিট (DELETE API)
       try {
         await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
         try { await notifyProductChange('Deleted', name); } catch(e){}
@@ -160,7 +185,7 @@ export default function Products() {
     }
   };
 
-  // 🚀 ৪. ক্লাউড ডাটাবেসে সেভ করার পারফেক্ট API (POST/PUT)
+  // 🚀 ৫. সেভ বা আপডেট করার API
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -195,16 +220,14 @@ export default function Products() {
       updatedList = products.map(p => (p._id || p.id) === targetId ? localProductObj : p);
     }
 
-    // ১. লোকাল মেমোরিতে ইনস্ট্যান্ট সেভ
     setProducts(updatedList);
     localStorage.setItem('mo_fashion_products', JSON.stringify(updatedList));
     window.dispatchEvent(new Event('storage'));
 
     setIsSaving(true);
     setIsModalOpen(false);
-    const toastId = toast.loading("Saving product & images to Cloud Database...");
+    const toastId = toast.loading("Saving product to Cloud Database...");
 
-    // ২. ক্লাউড ডাটাবেসে সেভ (POST / PUT API Call)
     try {
       let response;
       if (modalMode === 'add') {
@@ -222,9 +245,9 @@ export default function Products() {
       }
 
       if (response.ok) {
-        toast.success("Product & Discount saved LIVE on Cloud!", { id: toastId });
+        toast.success("Product saved LIVE on Cloud!", { id: toastId });
         try { await notifyProductChange(modalMode === 'add' ? 'Added' : 'Updated', productPayload.name); } catch(e){}
-        fetchProducts(); // রিফ্রেশ
+        fetchProducts(); 
       } else {
         toast.success("Product saved successfully!", { id: toastId });
       }
@@ -543,7 +566,7 @@ export default function Products() {
                 <button 
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-6 py-2.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-[#111111] hover:text-white transition-colors font-medium"
+                  className="px-6 py-2.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors font-medium"
                 >
                   Cancel
                 </button>
