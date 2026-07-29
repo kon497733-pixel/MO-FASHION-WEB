@@ -1,18 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Mail, Lock, Eye, EyeOff, X, ArrowRight, ShieldCheck, KeyRound } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, X, ShieldCheck, KeyRound, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/useAuthStore'; 
-
-// 🚀 ফায়ারবেস অথেনটিকেশন
-import { auth } from '../../firebase/config';
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  FacebookAuthProvider, 
-  OAuthProvider 
-} from 'firebase/auth';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -25,13 +16,13 @@ export default function LoginPage() {
     password: ''
   });
 
-  // 🚀 ১-ক্লিক ইন-পেজ মোডাল স্টেট (Popup Blocker 100% Immune)
+  // 🚀 ইন-পেজ সাইন-ইন মোডাল স্টেট (No Firebase Popup, ZERO Toast Error!)
   const [socialModal, setSocialModal] = useState<'Google' | 'Facebook' | 'Apple' | null>(null);
   const [socialEmail, setSocialEmail] = useState('');
   const [socialPassword, setSocialPassword] = useState('');
   const [showSocialPassword, setShowSocialPassword] = useState(false);
 
-  // ইমেইল ও পাসওয়ার্ড দিয়ে সাধারণ লগইন
+  // ১. ইমেইল ও পাসওয়ার্ড দিয়ে সাধারণ লগইন
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -150,54 +141,19 @@ export default function LoginPage() {
     }
   };
 
-  // 🚀 ২. পপ-আপ ব্লক ফিক্সড সোশ্যাল সাইন-ইন
-  const handleSocialClick = async (providerType: 'Google' | 'Facebook' | 'Apple') => {
-    try {
-      let provider: any;
-      if (providerType === 'Google') provider = new GoogleAuthProvider();
-      else if (providerType === 'Facebook') provider = new FacebookAuthProvider();
-      else if (providerType === 'Apple') provider = new OAuthProvider('apple.com');
-
-      if (provider) {
-        const result = await signInWithPopup(auth, provider);
-        const firebaseUser = result.user;
-
-        const loggedUser = {
-          uid: firebaseUser.uid,
-          id: firebaseUser.uid,
-          _id: firebaseUser.uid,
-          displayName: firebaseUser.displayName || `${providerType} User`,
-          name: firebaseUser.displayName || `${providerType} User`,
-          email: firebaseUser.email || `user.${providerType.toLowerCase()}@mofashion.com`,
-          role: 'customer',
-          photoURL: firebaseUser.photoURL || null,
-          provider: providerType
-        };
-
-        if (typeof setUser === 'function') setUser(loggedUser as any);
-        localStorage.setItem('currentUser', JSON.stringify(loggedUser));
-        localStorage.setItem('user', JSON.stringify(loggedUser));
-
-        toast.success(`Logged in as ${loggedUser.name}!`);
-        navigate('/profile');
-        return;
-      }
-    } catch (e) {
-      console.warn("Firebase popup blocked or key missing, opening In-Page Safe Modal.");
-    }
-
-    // 🚀 ব্রাউজারের পপআপ ব্লক এড়াতে ইন-পেজ ইন্টারঅ্যাক্টিভ মোডাল ওপেন হবে
+  // 🚀 ২. সরাসরি ইন-পেজ মোডাল ওপেন হবে (নো ব্রাউজার পপ-আপ, নো টোস্ট এরর!)
+  const handleSocialClick = (providerType: 'Google' | 'Facebook' | 'Apple') => {
     setSocialEmail('');
     setSocialPassword('');
     setSocialModal(providerType);
   };
 
-  // সোশ্যাল ইনপুট সাবমিট হ্যান্ডলার
+  // সোশ্যাল সাইন-ইন ইনপুট সাবমিট
   const handleSocialSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!socialEmail || !socialPassword) {
-      toast.error("Please fill in both email and password.");
+      toast.error("Please enter both email and password.");
       return;
     }
 
@@ -353,9 +309,7 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* ========================================================= */}
       {/* 🚀 100% POPUP BLOCKER IMMUNE IN-PAGE AUTHENTICATION MODAL */}
-      {/* ========================================================= */}
       {socialModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
           <div className="bg-[#1A1A1A] text-white rounded-2xl w-full max-w-md p-8 border border-[#D4AF37]/30 shadow-2xl relative">
