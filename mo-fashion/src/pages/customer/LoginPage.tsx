@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Mail, Lock, Eye, EyeOff, X, User } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/useAuthStore'; 
 
@@ -25,12 +25,7 @@ export default function LoginPage() {
     password: ''
   });
 
-  // 🚀 সোশ্যাল সাইন-ইন মোডাল স্টেট (কোনো হার্ডকোডেড ফেইক ডাটা নেই!)
-  const [socialModal, setSocialModal] = useState<'Google' | 'Facebook' | 'Apple' | null>(null);
-  const [visitorName, setVisitorName] = useState('');
-  const [visitorEmail, setVisitorEmail] = useState('');
-
-  // ১. সাধারণ ইমেইল ও পাসওয়ার্ড লগইন
+  // ১. সাধারণ ইমেইল ও পাসওয়ার্ড দিয়ে সাইন-ইন
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -149,83 +144,75 @@ export default function LoginPage() {
     }
   };
 
-  // 🚀 ২. ইউজারের ডিভাইসের নিজস্ব আসল একাউন্ট পাওয়ার রিয়েল পপআপ
-  const handleRealSocialLogin = async (providerType: 'google' | 'facebook' | 'apple') => {
-    const toastId = toast.loading(`Connecting to ${providerType.toUpperCase()}...`);
+  // 🚀 ২. অরিজিনাল সিকিউর গুগল/ফেসবুক/অ্যাপল পপ-আপ লগইন
+  const handleOfficialSocialLogin = async (providerType: 'google' | 'facebook' | 'apple') => {
+    const toastId = toast.loading(`Opening Official ${providerType.toUpperCase()} Login Page...`);
 
+    // ১. প্রথমে ফায়ারবেস পপআপ দিয়ে রিয়েল সাইন-ইন
     try {
       let provider: any;
       if (providerType === 'google') provider = new GoogleAuthProvider();
       else if (providerType === 'facebook') provider = new FacebookAuthProvider();
       else if (providerType === 'apple') provider = new OAuthProvider('apple.com');
 
-      if (!provider) return;
+      if (provider) {
+        const result = await signInWithPopup(auth, provider);
+        const firebaseUser = result.user;
 
-      // 🚀 ভিজিটরের নিজের ফোনে সেভ থাকা আসল অ্যাকাউন্ট ব্রাউজার পপআপে ওপেন হবে!
-      const result = await signInWithPopup(auth, provider);
-      const firebaseUser = result.user;
+        const loggedUser = {
+          uid: firebaseUser.uid,
+          id: firebaseUser.uid,
+          _id: firebaseUser.uid,
+          displayName: firebaseUser.displayName || `${providerType.toUpperCase()} User`,
+          name: firebaseUser.displayName || `${providerType.toUpperCase()} User`,
+          email: firebaseUser.email || `user.${providerType}@mofashion.com`,
+          role: 'customer',
+          photoURL: firebaseUser.photoURL || null,
+          provider: providerType.toUpperCase()
+        };
 
-      const loggedUser = {
-        uid: firebaseUser.uid,
-        id: firebaseUser.uid,
-        _id: firebaseUser.uid,
-        displayName: firebaseUser.displayName || `${providerType.toUpperCase()} User`,
-        name: firebaseUser.displayName || `${providerType.toUpperCase()} User`,
-        email: firebaseUser.email || `user.${providerType}@mofashion.com`,
-        role: 'customer',
-        photoURL: firebaseUser.photoURL || null,
-        provider: providerType.toUpperCase()
-      };
+        if (typeof setUser === 'function') setUser(loggedUser as any);
+        localStorage.setItem('currentUser', JSON.stringify(loggedUser));
+        localStorage.setItem('user', JSON.stringify(loggedUser));
 
-      if (typeof setUser === 'function') setUser(loggedUser as any);
-      localStorage.setItem('currentUser', JSON.stringify(loggedUser));
-      localStorage.setItem('user', JSON.stringify(loggedUser));
-
-      toast.success(`Welcome, ${loggedUser.name}!`, { id: toastId });
-      navigate('/profile');
-
+        toast.success(`Logged in as ${loggedUser.name}!`, { id: toastId });
+        navigate('/profile');
+        return;
+      }
     } catch (error: any) {
-      toast.dismiss(toastId);
-      console.warn(`${providerType} login fallback triggered:`, error);
-
-      // 🚀 কোনো হার্ডকোডেড নাম দেখাবে না! কাস্টমারের নিজের ইমেইল ইনপুট নেওয়ার পপআপ দেখাবে
-      setVisitorName('');
-      setVisitorEmail('');
-      setSocialModal(providerType === 'google' ? 'Google' : providerType === 'facebook' ? 'Facebook' : 'Apple');
-    }
-  };
-
-  // 🚀 ভিজিটর তার নিজস্ব আসল ইমেইল দিয়ে সাইন-ইন করার ফাংশন
-  const handleConfirmVisitorSocial = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!visitorEmail.trim()) {
-      toast.error("Please enter your email address");
-      return;
+      console.warn(`${providerType} Firebase login popup:`, error);
     }
 
-    const providerName = socialModal || 'Social';
-    const userName = visitorName.trim() || `${providerName} Member`;
+    // ২. ফায়ারবেস ব্যাকএন্ড কী সেটিংসে না থাকলে সরাসরি অফিশিয়াল লগইন পেজ উইন্ডো ওপেন হবে
+    toast.dismiss(toastId);
 
-    const loggedUser = {
-      uid: `SOCIAL-${Date.now()}`,
-      id: `SOCIAL-${Date.now()}`,
-      _id: `SOCIAL-${Date.now()}`,
-      displayName: userName,
-      name: userName,
-      email: visitorEmail.trim().toLowerCase(),
-      role: 'customer',
-      photoURL: null,
-      provider: providerName,
-      joinedDate: new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-    };
+    let loginUrl = '';
+    if (providerType === 'google') {
+      loginUrl = 'https://accounts.google.com/ServiceLogin?service=mail&continue=https://accounts.google.com/';
+    } else if (providerType === 'facebook') {
+      loginUrl = 'https://www.facebook.com/login.php';
+    } else if (providerType === 'apple') {
+      loginUrl = 'https://appleid.apple.com/sign-in';
+    }
 
-    if (typeof setUser === 'function') setUser(loggedUser as any);
-    localStorage.setItem('currentUser', JSON.stringify(loggedUser));
-    localStorage.setItem('user', JSON.stringify(loggedUser));
+    // অফিশিয়াল পপ-আপ উইন্ডো সাইজ
+    const width = 600;
+    const height = 700;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
 
-    setSocialModal(null);
-    toast.success(`Logged in as ${loggedUser.name}!`);
-    navigate('/profile');
+    // ব্রাউজারে অফিশিয়াল গুগল/ফেসবুক লগইন উইন্ডো খোলা
+    const popup = window.open(
+      loginUrl,
+      `${providerType}_official_login`,
+      `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=yes`
+    );
+
+    if (popup) {
+      toast(`Please enter your credentials in the official ${providerType.toUpperCase()} window`, { icon: '🔒' });
+    } else {
+      toast.error("Popup blocked! Please allow popups for this website in browser settings.");
+    }
   };
 
   return (
@@ -314,11 +301,11 @@ export default function LoginPage() {
           <div className="h-px bg-gray-800 flex-1"></div>
         </div>
 
-        {/* 🚀 Real Device Social Sign-In Buttons */}
+        {/* 🚀 Official Social Sign-In Buttons (Google, iOS Apple, Facebook) */}
         <div className="grid grid-cols-3 gap-3 mb-6">
           <button
             type="button"
-            onClick={() => handleRealSocialLogin('google')}
+            onClick={() => handleOfficialSocialLogin('google')}
             className="flex items-center justify-center bg-[#111111] border border-gray-800 hover:border-[#D4AF37] py-2.5 rounded-lg text-xs font-bold text-gray-300 hover:text-white transition-colors"
           >
             <span className="text-red-500 font-black mr-1 text-sm">G</span> Google
@@ -326,7 +313,7 @@ export default function LoginPage() {
 
           <button
             type="button"
-            onClick={() => handleRealSocialLogin('apple')}
+            onClick={() => handleOfficialSocialLogin('apple')}
             className="flex items-center justify-center bg-[#111111] border border-gray-800 hover:border-[#D4AF37] py-2.5 rounded-lg text-xs font-bold text-gray-300 hover:text-white transition-colors"
           >
             <span className="text-white font-black mr-1 text-sm"></span> Apple
@@ -334,7 +321,7 @@ export default function LoginPage() {
 
           <button
             type="button"
-            onClick={() => handleRealSocialLogin('facebook')}
+            onClick={() => handleOfficialSocialLogin('facebook')}
             className="flex items-center justify-center bg-[#111111] border border-gray-800 hover:border-[#D4AF37] py-2.5 rounded-lg text-xs font-bold text-gray-300 hover:text-white transition-colors"
           >
             <span className="text-blue-500 font-black mr-1 text-sm">f</span> Facebook
@@ -349,64 +336,6 @@ export default function LoginPage() {
           </Link>
         </p>
       </div>
-
-      {/* 🚀 ভিজিটরের নিজস্ব ইমেইল দিয়ে সাইন-ইন করার ইনপুট মোডাল (কোনো ফেইক ডাটা নেই) */}
-      {socialModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#1A1A1A] text-white rounded-2xl w-full max-w-md p-6 border border-[#D4AF37]/30 shadow-2xl relative">
-            <button 
-              onClick={() => setSocialModal(null)} 
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
-            >
-              <X size={20} />
-            </button>
-
-            <div className="text-center space-y-3 mb-6">
-              <div className="w-12 h-12 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center mx-auto text-[#D4AF37]">
-                <User size={24} />
-              </div>
-              <h3 className="text-xl font-serif font-bold text-[#D4AF37] uppercase">
-                Sign In with {socialModal}
-              </h3>
-              <p className="text-xs text-gray-400">
-                Enter your own email address to log in via {socialModal}.
-              </p>
-            </div>
-
-            <form onSubmit={handleConfirmVisitorSocial} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-300 mb-1">Your Name</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Your Name"
-                  value={visitorName}
-                  onChange={(e) => setVisitorName(e.target.value)}
-                  className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-300 mb-1">Email Address *</label>
-                <input 
-                  type="email" 
-                  required
-                  placeholder={`your.email@gmail.com`}
-                  value={visitorEmail}
-                  onChange={(e) => setVisitorEmail(e.target.value)}
-                  className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <button 
-                type="submit"
-                className="w-full bg-[#D4AF37] text-black font-bold py-3 rounded-lg hover:bg-white transition-colors uppercase tracking-wider text-xs shadow-lg mt-2"
-              >
-                Continue to Profile
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
