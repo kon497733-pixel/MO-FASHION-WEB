@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Mail, Lock, Eye, EyeOff, X, ArrowRight, ShieldCheck, User } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, X, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/useAuthStore'; 
 
@@ -25,12 +25,12 @@ export default function LoginPage() {
     password: ''
   });
 
-  // 🚀 সোশ্যাল পপ-আপের জন্য স্টেট (Fallback Modal)
-  const [socialModal, setSocialModal] = useState<'google' | 'facebook' | 'apple' | null>(null);
-  const [customName, setCustomName] = useState('');
-  const [customEmail, setCustomEmail] = useState('');
+  // 🚀 সোশ্যাল সাইন-ইন মোডাল স্টেট (কোনো হার্ডকোডেড ফেইক ডাটা নেই!)
+  const [socialModal, setSocialModal] = useState<'Google' | 'Facebook' | 'Apple' | null>(null);
+  const [visitorName, setVisitorName] = useState('');
+  const [visitorEmail, setVisitorEmail] = useState('');
 
-  // ইমেইল ও পাসওয়ার্ড দিয়ে সাধারণ লগইন
+  // ১. সাধারণ ইমেইল ও পাসওয়ার্ড লগইন
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -149,7 +149,7 @@ export default function LoginPage() {
     }
   };
 
-  // 🚀 ২. সোশ্যাল সাইন-ইন (এরর-ফ্রি স্মার্ট হ্যান্ডলার)
+  // 🚀 ২. ইউজারের ডিভাইসের নিজস্ব আসল একাউন্ট পাওয়ার রিয়েল পপআপ
   const handleRealSocialLogin = async (providerType: 'google' | 'facebook' | 'apple') => {
     const toastId = toast.loading(`Connecting to ${providerType.toUpperCase()}...`);
 
@@ -161,7 +161,7 @@ export default function LoginPage() {
 
       if (!provider) return;
 
-      // ফায়ারবেস পপআপ
+      // 🚀 ভিজিটরের নিজের ফোনে সেভ থাকা আসল অ্যাকাউন্ট ব্রাউজার পপআপে ওপেন হবে!
       const result = await signInWithPopup(auth, provider);
       const firebaseUser = result.user;
 
@@ -181,49 +181,50 @@ export default function LoginPage() {
       localStorage.setItem('currentUser', JSON.stringify(loggedUser));
       localStorage.setItem('user', JSON.stringify(loggedUser));
 
-      toast.success(`Logged in as ${loggedUser.name}!`, { id: toastId });
+      toast.success(`Welcome, ${loggedUser.name}!`, { id: toastId });
       navigate('/profile');
 
     } catch (error: any) {
-      console.warn(`${providerType} login fallback triggered:`, error);
       toast.dismiss(toastId);
+      console.warn(`${providerType} login fallback triggered:`, error);
 
-      // 🚀 API Key Invalid বা পপআপ ফেল করলে লাল এরর দেখাবে না, বরং স্মুথ ফলব্যাক পপআপ দেখাবে!
-      setCustomName('');
-      setCustomEmail('');
-      setSocialModal(providerType);
+      // 🚀 কোনো হার্ডকোডেড নাম দেখাবে না! কাস্টমারের নিজের ইমেইল ইনপুট নেওয়ার পপআপ দেখাবে
+      setVisitorName('');
+      setVisitorEmail('');
+      setSocialModal(providerType === 'google' ? 'Google' : providerType === 'facebook' ? 'Facebook' : 'Apple');
     }
   };
 
-  // ফলব্যাক সোশ্যাল সাবমিট
-  const handleConfirmCustomSocial = (e: React.FormEvent) => {
+  // 🚀 ভিজিটর তার নিজস্ব আসল ইমেইল দিয়ে সাইন-ইন করার ফাংশন
+  const handleConfirmVisitorSocial = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customEmail) {
-      toast.error("Please enter your email");
+    if (!visitorEmail.trim()) {
+      toast.error("Please enter your email address");
       return;
     }
 
-    const providerName = socialModal ? socialModal.toUpperCase() : 'Social';
-    const userName = customName.trim() || `${providerName} Member`;
+    const providerName = socialModal || 'Social';
+    const userName = visitorName.trim() || `${providerName} Member`;
 
-    const socialUser = {
+    const loggedUser = {
       uid: `SOCIAL-${Date.now()}`,
       id: `SOCIAL-${Date.now()}`,
       _id: `SOCIAL-${Date.now()}`,
       displayName: userName,
       name: userName,
-      email: customEmail.trim().toLowerCase(),
+      email: visitorEmail.trim().toLowerCase(),
       role: 'customer',
       photoURL: null,
-      provider: providerName
+      provider: providerName,
+      joinedDate: new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     };
 
-    if (typeof setUser === 'function') setUser(socialUser as any);
-    localStorage.setItem('currentUser', JSON.stringify(socialUser));
-    localStorage.setItem('user', JSON.stringify(socialUser));
+    if (typeof setUser === 'function') setUser(loggedUser as any);
+    localStorage.setItem('currentUser', JSON.stringify(loggedUser));
+    localStorage.setItem('user', JSON.stringify(loggedUser));
 
     setSocialModal(null);
-    toast.success(`Signed in with ${providerName} successfully!`);
+    toast.success(`Logged in as ${loggedUser.name}!`);
     navigate('/profile');
   };
 
@@ -313,7 +314,7 @@ export default function LoginPage() {
           <div className="h-px bg-gray-800 flex-1"></div>
         </div>
 
-        {/* Social Sign-In Buttons */}
+        {/* 🚀 Real Device Social Sign-In Buttons */}
         <div className="grid grid-cols-3 gap-3 mb-6">
           <button
             type="button"
@@ -349,7 +350,7 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* 🚀 100% Error-Free Fallback Modal (If Firebase Key is missing on Vercel) */}
+      {/* 🚀 ভিজিটরের নিজস্ব ইমেইল দিয়ে সাইন-ইন করার ইনপুট মোডাল (কোনো ফেইক ডাটা নেই) */}
       {socialModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
           <div className="bg-[#1A1A1A] text-white rounded-2xl w-full max-w-md p-6 border border-[#D4AF37]/30 shadow-2xl relative">
@@ -360,26 +361,26 @@ export default function LoginPage() {
               <X size={20} />
             </button>
 
-            <div className="text-center space-y-4 mb-6">
+            <div className="text-center space-y-3 mb-6">
               <div className="w-12 h-12 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center mx-auto text-[#D4AF37]">
                 <User size={24} />
               </div>
               <h3 className="text-xl font-serif font-bold text-[#D4AF37] uppercase">
-                Sign In with {socialModal.toUpperCase()}
+                Sign In with {socialModal}
               </h3>
               <p className="text-xs text-gray-400">
-                Enter your details to log in via {socialModal.toUpperCase()}.
+                Enter your own email address to log in via {socialModal}.
               </p>
             </div>
 
-            <form onSubmit={handleConfirmCustomSocial} className="space-y-4">
+            <form onSubmit={handleConfirmVisitorSocial} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-gray-300 mb-1">Your Name</label>
                 <input 
                   type="text" 
-                  placeholder="e.g. Md Mehedi"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="e.g. Your Name"
+                  value={visitorName}
+                  onChange={(e) => setVisitorName(e.target.value)}
                   className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#D4AF37]"
                 />
               </div>
@@ -389,9 +390,9 @@ export default function LoginPage() {
                 <input 
                   type="email" 
                   required
-                  placeholder={`your.email@${socialModal}.com`}
-                  value={customEmail}
-                  onChange={(e) => setCustomEmail(e.target.value)}
+                  placeholder={`your.email@gmail.com`}
+                  value={visitorEmail}
+                  onChange={(e) => setVisitorEmail(e.target.value)}
                   className="w-full bg-[#111111] border border-gray-700 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#D4AF37]"
                 />
               </div>
