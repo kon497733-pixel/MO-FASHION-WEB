@@ -10,6 +10,7 @@ export default function RegisterPage() {
   const { setUser } = useAuthStore(); 
   
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -17,7 +18,8 @@ export default function RegisterPage() {
     confirmPassword: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // 🚀 ১০০% রিয়েল ক্লাউড রেজিস্ট্রেশন লজিক
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (formData.password !== formData.confirmPassword) {
@@ -30,48 +32,110 @@ export default function RegisterPage() {
       return;
     }
 
-    const savedUsers = JSON.parse(localStorage.getItem('mo_fashion_users') || '[]');
-
-    const existingUser = savedUsers.find((user: any) => user.email === formData.email.toLowerCase());
-    if (existingUser) {
-      toast.error("An account with this email already exists!");
-      return;
-    }
+    setIsSubmitting(true);
+    const toastId = toast.loading("Creating your account on Cloud Database...");
 
     const userRole: 'admin' | 'customer' = formData.email.toLowerCase() === 'admin@mofashion.com' ? 'admin' : 'customer';
 
-    const newUser = {
-      uid: `USER-${Math.floor(1000 + Math.random() * 9000)}`,
-      email: formData.email.toLowerCase(),
-      password: formData.password, 
-      displayName: formData.name,
-      photoURL: null,
+    const userPayload = {
+      name: formData.name.trim(),
+      email: formData.email.toLowerCase().trim(),
+      password: formData.password,
       role: userRole,
       phone: '',
-      address: '',
-      memberSince: new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+      address: ''
     };
 
-    savedUsers.push(newUser);
-    localStorage.setItem('mo_fashion_users', JSON.stringify(savedUsers));
+    try {
+      // 🚀 ১. ক্লাউড ডাটাবেসে নতুন অ্যাকাউন্ট সেভ করা (MongoDB POST API)
+      const response = await fetch('http://localhost:5000/api/users/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userPayload)
+      });
 
-    // গ্লোবাল স্টোর এবং কারেন্ট ইউজার সেভ করা (প্রোফাইল পেজের জন্য) 🟢 UPDATED
-    setUser(newUser);
-    localStorage.setItem('currentUser', JSON.stringify({
-      id: newUser.uid,
-      name: newUser.displayName,
-      email: newUser.email
-    }));
+      const data = await response.json();
 
-    toast.success("Account created successfully!");
-    
-    setTimeout(() => {
-      if (newUser.role === 'admin') {
-        navigate('/admin');
+      if (response.ok) {
+        const newUser = {
+          uid: data.user._id,
+          _id: data.user._id,
+          email: data.user.email,
+          displayName: data.user.name,
+          name: data.user.name,
+          photoURL: data.user.profilePicture || null,
+          role: data.user.role,
+          phone: data.user.phone || '',
+          address: data.user.address || '',
+          memberSince: new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+        };
+
+        // ২. গ্লোবাল স্টোর এবং কারেন্ট ইউজার সেভ করা (প্রোফাইল পেজের জন্য)
+        if (typeof setUser === 'function') setUser(newUser);
+        localStorage.setItem('currentUser', JSON.stringify(newUser));
+        localStorage.setItem('user', JSON.stringify(newUser));
+
+        // লোকাল ব্যাকআপ
+        const savedUsers = JSON.parse(localStorage.getItem('mo_fashion_users') || '[]');
+        localStorage.setItem('mo_fashion_users', JSON.stringify([newUser, ...savedUsers]));
+
+        toast.success("Account created successfully LIVE on Cloud!", { id: toastId });
+        
+        setTimeout(() => {
+          if (newUser.role === 'admin') {
+            navigate('/admin');
+          } else {
+            navigate('/profile'); // সরাসরি নতুন প্রোফাইল পেজে যাবে
+          }
+        }, 1500);
+
       } else {
-        navigate('/profile'); // সরাসরি প্রোফাইল পেজে যাবে
+        toast.error(data.message || "Failed to create account", { id: toastId });
       }
-    }, 1500);
+    } catch (error) {
+      console.warn("Backend API offline, falling back to local registration.", error);
+      
+      // লোকাল মেমোরি ব্যাকআপ
+      const savedUsers = JSON.parse(localStorage.getItem('mo_fashion_users') || '[]');
+      const existingUser = savedUsers.find((user: any) => user.email === formData.email.toLowerCase());
+      
+      if (existingUser) {
+        toast.error("An account with this email already exists!", { id: toastId });
+        return;
+      }
+
+      const localNewUser = {
+        uid: `USER-${Math.floor(1000 + Math.random() * 9000)}`,
+        email: formData.email.toLowerCase(),
+        password: formData.password, 
+        displayName: formData.name,
+        name: formData.name,
+        photoURL: null,
+        role: userRole,
+        phone: '',
+        address: '',
+        memberSince: new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+      };
+
+      savedUsers.push(localNewUser);
+      localStorage.setItem('mo_fashion_users', JSON.stringify(savedUsers));
+
+      if (typeof setUser === 'function') setUser(localNewUser);
+      localStorage.setItem('currentUser', JSON.stringify(localNewUser));
+      localStorage.setItem('user', JSON.stringify(localNewUser));
+
+      toast.success("Account created successfully!", { id: toastId });
+      
+      setTimeout(() => {
+        if (localNewUser.role === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/profile');
+        }
+      }, 1500);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -167,21 +231,23 @@ export default function RegisterPage() {
           <div className="flex items-start text-sm">
             <label className="flex items-center text-gray-400 cursor-pointer hover:text-white transition-colors">
               <input type="checkbox" className="mr-2 accent-[#D4AF37] mt-1" required />
-              <span>I agree to the <Link to="#" className="text-[#D4AF37] hover:underline">Terms & Conditions</Link> and <Link to="#" className="text-[#D4AF37] hover:underline">Privacy Policy</Link></span>
+              <span>I agree to the <Link to="/terms" className="text-[#D4AF37] hover:underline">Terms & Conditions</Link> and <Link to="/privacy" className="text-[#D4AF37] hover:underline">Privacy Policy</Link></span>
             </label>
           </div>
 
           <button
             type="submit"
-            className="w-full bg-[#D4AF37] text-black font-bold uppercase tracking-wider py-3 rounded-lg hover:bg-white transition-colors shadow-[0_0_15px_rgba(212,175,55,0.3)] mt-2"
+            disabled={isSubmitting}
+            className="w-full bg-[#D4AF37] text-black font-bold uppercase tracking-wider py-3 rounded-lg hover:bg-white transition-colors shadow-[0_0_15px_rgba(212,175,55,0.3)] mt-2 disabled:opacity-50"
           >
-            Create Account
+            {isSubmitting ? 'Creating Account...' : 'Create Account'}
           </button>
         </form>
 
+        {/* 🚀 Link Fix: /register এর বদলে /login লিংক বসানো হলো */}
         <p className="text-center text-gray-400 mt-6 text-sm">
           Already have an account?{' '}
-          <Link to="/register" className="text-[#D4AF37] font-bold hover:text-white transition-colors">
+          <Link to="/login" className="text-[#D4AF37] font-bold hover:text-white transition-colors">
             Sign in now
           </Link>
         </p>

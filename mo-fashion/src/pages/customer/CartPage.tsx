@@ -15,6 +15,7 @@ export default function CartPage() {
   const [couponInput, setCouponInput] = useState('');
   const [deliveryArea, setDeliveryArea] = useState<'inside' | 'outside'>('inside');
 
+  // 🚀 লাইভ ক্লাউড সেটিং ডাটা
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
     currency: '৳',
@@ -23,14 +24,40 @@ export default function CartPage() {
     shippingOutside: 150,
   });
 
+  // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে প্রোডাক্ট ও সেটিং সিঙ্ক করা
   useEffect(() => {
     if (typeof removeCoupon === 'function') removeCoupon();
 
-    const savedProducts = localStorage.getItem('mo_fashion_products');
-    if (savedProducts) setDbProducts(JSON.parse(savedProducts));
+    const loadCartData = async () => {
+      // ১. লোকাল স্টোরেজ থেকে ইনস্ট্যান্ট ডাটা
+      const savedProducts = localStorage.getItem('mo_fashion_products');
+      if (savedProducts) setDbProducts(JSON.parse(savedProducts));
 
-    const savedSettings = localStorage.getItem('mo_fashion_settings');
-    if (savedSettings) setSiteSettings(JSON.parse(savedSettings));
+      const savedSettings = localStorage.getItem('mo_fashion_settings');
+      if (savedSettings) setSiteSettings(JSON.parse(savedSettings));
+
+      // ২. ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম সিঙ্ক
+      try {
+        const [prodRes, settingsRes] = await Promise.all([
+          fetch('http://localhost:5000/api/products').catch(() => null),
+          fetch('http://localhost:5000/api/settings').catch(() => null)
+        ]);
+
+        if (prodRes && prodRes.ok) {
+          const cloudProds = await prodRes.json();
+          if (Array.isArray(cloudProds)) setDbProducts(cloudProds);
+        }
+
+        if (settingsRes && settingsRes.ok) {
+          const cloudSet = await settingsRes.json();
+          if (cloudSet) setSiteSettings(cloudSet);
+        }
+      } catch (e) {
+        console.warn("Backend API offline, using cached cart settings.");
+      }
+    };
+
+    loadCartData();
   }, []);
 
   const safeIncrease = (id: string, size: string, color: string) => {
@@ -43,15 +70,12 @@ export default function CartPage() {
     else if (cartStore.updateQuantity) cartStore.updateQuantity(id, size, color, 'decrease');
   };
 
-  // 🚀 FIX: ডিলিট ফাংশন ১০০% গ্যারান্টি দিয়ে কাজ করার জন্য ম্যানুয়াল লজিক বসানো হলো
   const safeRemove = (id: string, size: string, color: string) => {
     try {
-      // প্রথমে স্টোরের ফাংশন কল করার চেষ্টা করবে
       if (cartStore.removeFromCart) {
         cartStore.removeFromCart(id);
       }
       
-      // এরপর ১০০% কনফার্ম ডিলিটের জন্য সরাসরি লোকাল স্টোরেজ থেকে ডিলিট করবে
       const existingCart = JSON.parse(localStorage.getItem('mo_fashion_cart_storage') || '{}');
       if (existingCart && existingCart.state && existingCart.state.cartItems) {
         const newCartItems = existingCart.state.cartItems.filter(
@@ -59,7 +83,6 @@ export default function CartPage() {
         );
         existingCart.state.cartItems = newCartItems;
         localStorage.setItem('mo_fashion_cart_storage', JSON.stringify(existingCart));
-        // স্টোর ফোর্স রিলোড করার জন্য পেজ রিফ্রেশ
         window.location.reload(); 
       }
     } catch (e) {
@@ -121,13 +144,43 @@ export default function CartPage() {
   
   const grandTotal = Math.max(0, subtotalAfterCoupon + shipping + taxAmount);
 
-  const handleApplyCoupon = () => {
+  // 🚀 ২. ক্লাউড ডাটাবেসে কুপন ভ্যালিডেট করার API Call
+  const handleApplyCoupon = async () => {
     if (!couponInput.trim()) {
       toast.error('Please enter a coupon code!');
       return;
     }
+
+    const inputCode = couponInput.trim().toUpperCase();
+
+    // ১. ক্লাউড এপিআই দিয়ে কুপন ভ্যালিডেশন
+    try {
+      const res = await fetch('http://localhost:5000/api/coupons/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: inputCode })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.coupon) {
+          applyCoupon({
+            code: data.coupon.code,
+            discountValue: Number(data.coupon.discountValue),
+            discountType: data.coupon.type?.toLowerCase() === 'percentage' ? 'percentage' : 'fixed'
+          } as any);
+          toast.success(`Coupon ${data.coupon.code} applied LIVE from Cloud!`);
+          setCouponInput('');
+          return;
+        }
+      }
+    } catch(e) {
+      console.warn("Cloud Coupon API offline, trying local coupons.");
+    }
+
+    // ২. ফলব্যাক: লোকালস্টোরেজ থেকে কুপন চেক
     const savedCoupons = JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
-    const validCoupon = savedCoupons.find((c: any) => c.code === couponInput.trim().toUpperCase() && c.status === 'Active');
+    const validCoupon = savedCoupons.find((c: any) => c.code === inputCode && c.status === 'Active');
 
     if (validCoupon) {
       const discountValue = Number(validCoupon.discountValue);
@@ -220,7 +273,6 @@ export default function CartPage() {
                     </div>
 
                     <div className="flex sm:flex-col items-center justify-between w-full sm:w-auto sm:items-end gap-4 sm:h-36 py-2 z-10">
-                      {/* 🚀 Delete Button Fix */}
                       <button 
                         onClick={() => {
                           safeRemove(item.id, item.size, item.color);

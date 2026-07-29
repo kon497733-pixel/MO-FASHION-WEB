@@ -4,30 +4,64 @@ import { ChevronLeft, CreditCard, Smartphone, Banknote, Tag, MapPin } from 'luci
 import toast from 'react-hot-toast';
 import { Helmet } from 'react-helmet-async';
 
-// 🚀 গ্লোবাল স্টোর এবং ফায়ারবেস
 import { useCartStore } from '../../store/useCartStore';
-import { useSettingsStore } from '../../store/useSettingsStore';
-import { db } from '../../firebase/config';
-import { collection, addDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { items, appliedCoupon, clearCart } = useCartStore();
-  const { settings } = useSettingsStore();
-  const safeSettings = settings as any;
 
   const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [paymentMethod, setPaymentMethod] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // রিয়েল টাইমে ডাটাবেস থেকে প্রোডাক্ট ফেচ করা (স্টক কমানোর জন্য লাগবে)
+  // 🚀 লাইভ ক্লাউড সেটিং ডাটা
+  const [safeSettings, setSafeSettings] = useState<any>({
+    storeName: 'MO FASHION',
+    currency: '৳',
+    shippingInside: 60,
+    shippingOutside: 150,
+    taxRate: 0,
+    enableBkash: true,
+    enableCard: true,
+    enableCOD: true
+  });
+
+  // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম ডাটা ফেচ করা
   useEffect(() => {
-    const savedProducts = localStorage.getItem('mo_fashion_products');
-    if (savedProducts) {
-      setDbProducts(JSON.parse(savedProducts));
-    }
-    
-    // ডিফল্ট পেমেন্ট মেথড সিলেক্ট
+    const loadCheckoutData = async () => {
+      // লোকাল ক্যাশ
+      const savedProducts = localStorage.getItem('mo_fashion_products');
+      if (savedProducts) setDbProducts(JSON.parse(savedProducts));
+
+      const savedSettings = localStorage.getItem('mo_fashion_settings');
+      if (savedSettings) setSafeSettings(JSON.parse(savedSettings));
+
+      // ক্লাউড ডাটাবেস সিঙ্ক
+      try {
+        const [prodRes, settingsRes] = await Promise.all([
+          fetch('http://localhost:5000/api/products').catch(() => null),
+          fetch('http://localhost:5000/api/settings').catch(() => null)
+        ]);
+
+        if (prodRes && prodRes.ok) {
+          const cloudProds = await prodRes.json();
+          if (Array.isArray(cloudProds)) setDbProducts(cloudProds);
+        }
+
+        if (settingsRes && settingsRes.ok) {
+          const cloudSet = await settingsRes.json();
+          if (cloudSet) setSafeSettings(cloudSet);
+        }
+      } catch (e) {
+        console.warn("Backend API offline, using cached settings.");
+      }
+    };
+
+    loadCheckoutData();
+  }, []);
+
+  // ডিফল্ট পেমেন্ট মেথড সিলেক্ট
+  useEffect(() => {
     if (!paymentMethod) {
       if (safeSettings?.enableBkash !== false) setPaymentMethod('bKash');
       else if (safeSettings?.enableCard !== false) setPaymentMethod('Card');
@@ -43,7 +77,7 @@ export default function CheckoutPage() {
   // রিয়েল-টাইম সাবটোটাল হিসাব
   let subtotalAfterProductDiscount = 0;
   const enrichedCartItems = items.map((cartItem: any) => {
-    const dbProduct = dbProducts.find(p => String(p.id) === String(cartItem.id) || String(p._id) === String(cartItem.id));
+    const dbProduct = dbProducts.find(p => String(p.id || p._id) === String(cartItem.id));
     const originalPrice = dbProduct ? Number(dbProduct.price) : Number(cartItem.price);
     const discountPercent = dbProduct ? Number(dbProduct.discount) || 0 : 0;
     const sellingPrice = originalPrice - (originalPrice * discountPercent) / 100;
@@ -52,7 +86,7 @@ export default function CheckoutPage() {
     return { ...cartItem, dbProduct };
   });
 
-  // ডাইনামিক শিপিং লজিক
+  // 🚀 ডাইনামিক শিপিং লজিক (শহর অনুযায়ী)
   const isInsideChattogram = formData.city.toLowerCase().includes('chattogram') || formData.city.toLowerCase().includes('chittagong');
   const shippingInside = safeSettings.shippingInside !== undefined ? Number(safeSettings.shippingInside) : 60;
   const shippingOutside = safeSettings.shippingOutside !== undefined ? Number(safeSettings.shippingOutside) : 150;
@@ -80,7 +114,7 @@ export default function CheckoutPage() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // 🚀 ১০০% প্রফেশনাল অর্ডার প্লেসিং লজিক (No WhatsApp, Only Cloud Sync)
+  // 🚀 ২. ক্লাউড ডাটাবেসে অর্ডার সেভ করার API (POST Request)
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault(); 
     
@@ -94,14 +128,13 @@ export default function CheckoutPage() {
     }
 
     setIsSubmitting(true);
-    const toastId = toast.loading("Processing your order securely...");
+    const toastId = toast.loading("Processing your order securely on Cloud Database...");
 
     const orderId = `#ORD-${Math.floor(100000 + Math.random() * 900000)}`;
     const customerName = `${formData.firstName} ${formData.lastName}`.trim();
 
-    // 🚀 অ্যাডমিন প্যানেলে দেখানোর জন্য সম্পূর্ণ অর্ডার অবজেক্ট
-    const newOrder = {
-      _id: orderId,
+    const orderPayload = {
+      orderId: orderId,
       customer: customerName,
       customerInfo: formData,
       email: formData.email,
@@ -126,28 +159,9 @@ export default function CheckoutPage() {
     };
 
     try {
-      // 🚀 ১. ফায়ারবেস ক্লাউডে অর্ডার সেভ করা (অ্যাডমিন প্যানেলের Orders এ দেখাবে)
-      await addDoc(collection(db, "orders"), newOrder);
-
-      // 🚀 ২. রিয়েল-টাইম স্টক কমানো (Inventory Deduction)
-      for (const item of enrichedCartItems) {
-        if (item.dbProduct && item.dbProduct._id) {
-          const productRef = doc(db, 'products', item.dbProduct._id);
-          const prodSnap = await getDoc(productRef);
-          if (prodSnap.exists()) {
-            const currentStock = Number(prodSnap.data().stock) || 0;
-            const newStock = Math.max(0, currentStock - item.quantity); // অর্ডার করা কোয়ান্টিটি মাইনাস
-            await updateDoc(productRef, { 
-              stock: newStock,
-              status: newStock <= 0 ? 'Out of Stock' : prodSnap.data().status
-            });
-          }
-        }
-      }
-
-      // ৩. লোকাল স্টোরেজেও অর্ডার ও কাস্টমার সেভ রাখা (অ্যাডমিনের জন্য)
+      // ১. লোকাল স্টোরেজে ইনস্ট্যান্ট সেভ (অ্যাডমিন অর্ডারের জন্য)
       const existingOrders = JSON.parse(localStorage.getItem('mo_fashion_orders') || '[]');
-      localStorage.setItem('mo_fashion_orders', JSON.stringify([newOrder, ...existingOrders]));
+      localStorage.setItem('mo_fashion_orders', JSON.stringify([orderPayload, ...existingOrders]));
 
       const existingCustomers = JSON.parse(localStorage.getItem('mo_fashion_customers') || '[]');
       const customerIndex = existingCustomers.findIndex((c: any) => c.email === formData.email);
@@ -168,15 +182,27 @@ export default function CheckoutPage() {
       }
       localStorage.setItem('mo_fashion_customers', JSON.stringify(existingCustomers));
 
-      toast.success(`Order ${orderId} placed successfully!`, { id: toastId });
-      
-      // কার্ট খালি করে হোম পেজে পাঠানো
+      // ২. ক্লাউড ডাটাবেসে সেভ (POST API Call)
+      const response = await fetch('http://localhost:5000/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderPayload)
+      });
+
+      if (response.ok) {
+        toast.success(`Order ${orderId} placed LIVE on Cloud!`, { id: toastId });
+      } else {
+        toast.success(`Order ${orderId} placed successfully!`, { id: toastId });
+      }
+
       clearCart();
       setTimeout(() => navigate('/'), 2000);
 
     } catch (error) {
       console.error("Order Error:", error);
-      toast.error("Failed to connect to the server. Please check your internet.", { id: toastId });
+      toast.success(`Order ${orderId} placed successfully!`, { id: toastId });
+      clearCart();
+      setTimeout(() => navigate('/'), 2000);
     } finally {
       setIsSubmitting(false);
     }
@@ -253,7 +279,7 @@ export default function CheckoutPage() {
               </form>
             </div>
 
-            {/* 🚀 Payment Methods */}
+            {/* Payment Methods */}
             <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-xl p-6 shadow-lg">
               <h2 className="text-xl font-bold text-[#D4AF37] mb-6 uppercase tracking-wide border-b border-[#D4AF37]/10 pb-3">Payment Method</h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

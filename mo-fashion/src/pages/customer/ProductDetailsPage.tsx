@@ -7,17 +7,10 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCartStore } from '../../store/useCartStore';
-import { useSettingsStore } from '../../store/useSettingsStore';
-
-// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
-import { db } from '../../firebase/config';
-import { doc, getDoc, getDocs, collection } from 'firebase/firestore';
 
 export default function ProductDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { settings } = useSettingsStore();
-  const safeSettings = settings as any;
 
   const addToCart = useCartStore((state) => state.addToCart);
 
@@ -29,14 +22,22 @@ export default function ProductDetailsPage() {
   
   const [mainImage, setMainImage] = useState('');
 
-  // 🚀 লাইটবক্স ও জুমের স্টেট
+  // 🚀 লাইভ ক্লাউড সেটিং ডাটা (শিপিং ও কারেন্সি)
+  const [siteSettings, setSiteSettings] = useState<any>({
+    storeName: 'MO FASHION',
+    currency: '৳',
+    shippingInside: 60,
+    shippingOutside: 150
+  });
+
+  // 🚀 লাইটবক্স ও জুমের স্টেট (আপনার অরিজিনাল ফিচার)
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  // 🚀 ১০০% গ্যারান্টেড প্রোডাক্ট ফেচিং লজিক (Product Not Found এরর চিরতরে ফিক্সড)
+  // 🚀 ১. ক্লাউড ডাটাবেজ (MongoDB API) থেকে প্রোডাক্ট ও সেটিং লোড করা
   useEffect(() => {
     const loadProductDetails = async () => {
       setLoading(true);
@@ -46,59 +47,51 @@ export default function ProductDetailsPage() {
         return;
       }
 
-      let foundProduct: any = null;
+      // ১. প্রথমে লোকাল স্টোরেজ থেকে ইনস্ট্যান্ট চেক
+      const localProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
+      let foundProduct = localProducts.find((p: any) => 
+        String(p._id || p.id) === String(id)
+      );
 
-      // ১. সরাসরি ফায়ারবেস ক্লাউড আইডি দিয়ে খোঁজা
-      try {
-        const docRef = doc(db, 'products', id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          foundProduct = { id: docSnap.id, _id: docSnap.id, ...docSnap.data() };
-        }
-      } catch (e) {
-        console.warn("Direct doc fetch skipped.");
+      const savedSettings = localStorage.getItem('mo_fashion_settings');
+      if (savedSettings) {
+        try { setSiteSettings(JSON.parse(savedSettings)); } catch(e){}
       }
 
-      // ২. যদি সরাসরি আইডিতে না পায়, তবে ক্লাউডের সব প্রোডাক্ট স্ক্যান করে আইডি ম্যাচ করানো
-      if (!foundProduct) {
-        try {
-          const querySnapshot = await getDocs(collection(db, 'products'));
-          querySnapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            if (
-              String(docSnap.id) === String(id) || 
-              String(data.id) === String(id) || 
-              String(data._id) === String(id)
-            ) {
-              foundProduct = { id: docSnap.id, _id: docSnap.id, ...data };
-            }
-          });
-        } catch (e) {
-          console.warn("Collection scan skipped.");
-        }
-      }
-
-      // ৩. যদি ক্লাউডেও না পায়, তবে ব্রাউজারের মেমোরি থেকে ম্যাচ করা
-      if (!foundProduct) {
-        const localProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
-        foundProduct = localProducts.find((p: any) => 
-          String(p.id) === String(id) || String(p._id) === String(id)
-        );
-      }
-
-      // ৪. প্রোডাক্ট ডাটা সেট করা
       if (foundProduct) {
         setProduct(foundProduct);
-        if (foundProduct.sizes && foundProduct.sizes.length > 0) setSelectedSize(foundProduct.sizes[0]);
-        if (foundProduct.colors && foundProduct.colors.length > 0) setSelectedColor(foundProduct.colors[0]);
-
-        const img = foundProduct.imageUrl || (foundProduct.images && foundProduct.images[0]) || '';
+        const img = (foundProduct.images && foundProduct.images[0]) || foundProduct.imageUrl || '';
         setMainImage(img);
-      } else {
-        setProduct(null);
       }
 
-      setLoading(false);
+      // ২. ক্লাউড ডাটাবেস (MongoDB Backend) থেকে রিয়েল-টাইম ফেচ
+      try {
+        const [prodRes, settingsRes] = await Promise.all([
+          fetch(`http://localhost:5000/api/products/${id}`).catch(() => null),
+          fetch(`http://localhost:5000/api/settings`).catch(() => null)
+        ]);
+
+        if (prodRes && prodRes.ok) {
+          const cloudProduct = await prodRes.json();
+          if (cloudProduct && !cloudProduct.message) {
+            setProduct(cloudProduct);
+            if (cloudProduct.sizes && cloudProduct.sizes.length > 0) setSelectedSize(cloudProduct.sizes[0]);
+            if (cloudProduct.colors && cloudProduct.colors.length > 0) setSelectedColor(cloudProduct.colors[0]);
+
+            const img = (cloudProduct.images && cloudProduct.images[0]) || cloudProduct.imageUrl || '';
+            setMainImage(img);
+          }
+        }
+
+        if (settingsRes && settingsRes.ok) {
+          const cloudSettings = await settingsRes.json();
+          if (cloudSettings) setSiteSettings(cloudSettings);
+        }
+      } catch (e) {
+        console.warn("Backend API offline, using local cached data.");
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadProductDetails();
@@ -118,13 +111,13 @@ export default function ProductDetailsPage() {
     const sellingPrice = discountPercent > 0 ? originalPrice - (originalPrice * discountPercent / 100) : originalPrice;
 
     const cartItem = {
-      id: String(product.id || product._id),
+      id: String(product._id || product.id),
       name: String(product.name),
-      price: sellingPrice,
+      price: Number(sellingPrice.toFixed(2)),
       quantity: quantity,
       size: selectedSize,
       color: selectedColor,
-      imageUrl: mainImage || product.imageUrl || (product.images && product.images[0]) || '',
+      image: mainImage || product.imageUrl || (product.images && product.images[0]) || '',
       stock: Number(product.stock) || 0
     };
 
@@ -141,7 +134,7 @@ export default function ProductDetailsPage() {
     navigate('/cart');
   };
 
-  // 🚀 জুম ইন/আউট লজিক
+  // 🚀 জুম ও ড্র্যাগ হ্যান্ডলারস (আপনার অরিজিনাল লজিক)
   const handleZoomIn = () => setZoomLevel(prev => Math.min(prev + 0.5, 4)); 
   const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.5, 1)); 
   
@@ -288,9 +281,9 @@ export default function ProductDetailsPage() {
             </div>
 
             <div className="mb-6 flex items-center space-x-3">
-              <p className="text-4xl font-bold text-[#D4AF37]">{safeSettings?.currency || '৳'}{currentPrice.toFixed(2)}</p>
+              <p className="text-4xl font-bold text-[#D4AF37]">{siteSettings?.currency || '৳'}{currentPrice.toFixed(2)}</p>
               {discountPercent > 0 && (
-                <p className="text-gray-500 line-through text-lg">{safeSettings?.currency || '৳'}{originalPrice.toFixed(2)}</p>
+                <p className="text-gray-500 line-through text-lg">{siteSettings?.currency || '৳'}{originalPrice.toFixed(2)}</p>
               )}
             </div>
 
@@ -363,7 +356,7 @@ export default function ProductDetailsPage() {
             </div>
           </div>
 
-          {/* Column 3: Shipping */}
+          {/* Column 3: Shipping (Cloud Settings Synced) */}
           <div className="lg:col-span-3">
             <div className="bg-[#1A1A1A] rounded-xl border border-gray-800 p-5 space-y-6 sticky top-24">
               <div>
@@ -375,7 +368,7 @@ export default function ProductDetailsPage() {
                       <p className="text-sm text-white font-medium">Inside Chittagong</p>
                       <p className="text-xs text-gray-500">Delivery in 1-2 Days</p>
                     </div>
-                    <span className="text-white font-bold text-sm">{safeSettings?.currency || '৳'} {safeSettings?.shippingInside || 60}</span>
+                    <span className="text-white font-bold text-sm">{siteSettings?.currency || '৳'} {siteSettings?.shippingInside || 60}</span>
                   </div>
                   <div className="flex items-start space-x-3 border-t border-gray-800 pt-4">
                     <Truck size={20} className="text-[#D4AF37] mt-0.5" />
@@ -383,7 +376,19 @@ export default function ProductDetailsPage() {
                       <p className="text-sm text-white font-medium">Outside Chittagong</p>
                       <p className="text-xs text-gray-500">Delivery in 3-5 Days</p>
                     </div>
-                    <span className="text-white font-bold text-sm">{safeSettings?.currency || '৳'} {safeSettings?.shippingOutside || 150}</span>
+                    <span className="text-white font-bold text-sm">{siteSettings?.currency || '৳'} {siteSettings?.shippingOutside || 150}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-gray-800">
+                <h3 className="text-gray-400 text-xs uppercase tracking-widest font-bold mb-4">Return & Warranty</h3>
+                <div className="space-y-4">
+                  <div className="flex items-start space-x-3">
+                    <RotateCcw size={20} className="text-gray-400 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm text-white">14 days easy return</p>
+                    </div>
                   </div>
                 </div>
               </div>

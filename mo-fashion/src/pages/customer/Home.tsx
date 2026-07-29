@@ -1,26 +1,30 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Search, Tag, RefreshCw } from 'lucide-react';
+import { ShoppingBag, Image as ImageIcon, ArrowRight, Search, Tag, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-import { useSettingsStore } from '../../store/useSettingsStore';
 import { useCartStore } from '../../store/useCartStore';
 
 export default function Home() {
-  const { settings } = useSettingsStore();
-  const safeSettings = settings as any;
   const addToCart = useCartStore((state) => state.addToCart);
 
-  // 🚀 আপনার লাইভ মঙ্গোডিবি ক্লাউড এপিআই লিঙ্ক
-  const API_URL = 'https://mo-fashion-api-mehedi.onrender.com/api/products';
+  // 🚀 মঙ্গোডিবি ক্লাউড এপিআই লিঙ্ক
+  const API_URL = 'http://localhost:5000/api/products';
+  const SETTINGS_API_URL = 'http://localhost:5000/api/settings';
 
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [displayProducts, setDisplayProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে অটো-স্লাইড হওয়ার জন্য স্টেট
+  // 🚀 লাইভ ক্লাউড সেটিংস স্টেট (স্টোর নাম, ট্যাগলাইন, কারেন্সি)
+  const [siteSettings, setSiteSettings] = useState<any>({
+    storeName: 'MO FASHION',
+    tagline: 'Premium E-Commerce Experience',
+    currency: '৳'
+  });
+
+  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে অটো-স্লাইড হওয়ার জন্য স্টেট (আপনার অরিজিনাল লজিক)
   const [imageIndex, setImageIndex] = useState(0);
 
   useEffect(() => {
@@ -30,50 +34,58 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ১. সরাসরি ক্লাউড ডাটাবেস থেকে প্রোডাক্ট ফেচ ও ডিসকাউন্ট রিকভার করা
-  const fetchLiveProducts = async () => {
+  // 🚀 ১. সরাসরি ক্লাউড ডাটাবেস (MongoDB API) থেকে প্রোডাক্ট ও সেটিংস ফেচ করা
+  const fetchLiveHomeData = async () => {
+    // ১. লোকাল স্টোরেজ থেকে ইনস্ট্যান্ট লোড (জিরো ডিলে)
+    const savedProducts = localStorage.getItem('mo_fashion_products');
+    if (savedProducts) {
+      try {
+        const parsed = JSON.parse(savedProducts);
+        setAllProducts(parsed);
+        setDisplayProducts(parsed);
+      } catch (e) {}
+    }
+
+    const savedSettings = localStorage.getItem('mo_fashion_settings');
+    if (savedSettings) {
+      try {
+        setSiteSettings(JSON.parse(savedSettings));
+      } catch (e) {}
+    }
+
+    // ২. ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম ডাটা সিঙ্ক
     try {
       setLoading(true);
-      const response = await fetch(API_URL);
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          // ডিসকাউন্ট পার্সেন্টেজ এক্সট্র্যাক্ট লজিক
-          const parsedProducts = data.map((p: any) => {
-            let extractedDiscount = Number(p.discount) || 0;
-            if (extractedDiscount === 0 && p.description && p.description.includes('[DISCOUNT:')) {
-              const match = p.description.match(/\[DISCOUNT:(\d+)\]/);
-              if (match) extractedDiscount = Number(match[1]);
-            }
-            return {
-              ...p,
-              discount: extractedDiscount
-            };
-          });
+      const [prodRes, settingsRes] = await Promise.all([
+        fetch(API_URL).catch(() => null),
+        fetch(SETTINGS_API_URL).catch(() => null)
+      ]);
 
-          const latestFirst = [...parsedProducts].reverse();
-          setAllProducts(latestFirst);
-          setDisplayProducts(latestFirst);
-          localStorage.setItem('mo_fashion_products', JSON.stringify(latestFirst));
+      if (prodRes && prodRes.ok) {
+        const data = await prodRes.json();
+        if (Array.isArray(data)) {
+          setAllProducts(data);
+          setDisplayProducts(data);
+          localStorage.setItem('mo_fashion_products', JSON.stringify(data));
+        }
+      }
+
+      if (settingsRes && settingsRes.ok) {
+        const settingsData = await settingsRes.json();
+        if (settingsData) {
+          setSiteSettings(settingsData);
+          localStorage.setItem('mo_fashion_settings', JSON.stringify(settingsData));
         }
       }
     } catch (error) {
-      console.error("Error fetching live products on Home:", error);
-      const savedLocal = localStorage.getItem('mo_fashion_products');
-      if (savedLocal) {
-        try {
-          const parsed = JSON.parse(savedLocal);
-          setAllProducts(parsed);
-          setDisplayProducts(parsed);
-        } catch (e) {}
-      }
+      console.warn("Backend API offline, using cached home data.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLiveProducts();
+    fetchLiveHomeData();
   }, []);
 
   // সার্চ ফিল্টার লজিক
@@ -89,19 +101,30 @@ export default function Home() {
     }
   }, [searchQuery, allProducts]);
 
-  const handleAddToCart = (product: any) => {
+  // 🚀 ডাইনামিক Add to Cart
+  const handleAddToCart = (product: any, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     const origPrice = Number(product.price) || 0;
     const discPercent = Number(product.discount) || 0;
     const sellingPrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
 
+    let productImage = 'No Image';
+    if (product.images && product.images.length > 0 && !product.images[0].includes('No+Image')) {
+      productImage = product.images[0];
+    } else if (product.imageUrl) {
+      productImage = product.imageUrl;
+    }
+
     const cartItem = {
       id: String(product._id || product.id),
-      name: product.name,
-      price: sellingPrice,
+      name: String(product.name || 'Unnamed Product'),
+      price: Number(sellingPrice.toFixed(2)),
       quantity: 1,
-      size: 'Standard',
-      color: 'Default',
-      imageUrl: product.imageUrl || (product.images && product.images[0]) || '',
+      size: 'M',
+      color: 'Black',
+      image: productImage,
       stock: Number(product.stock) || 0
     };
 
@@ -112,17 +135,17 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#111111] pb-12 text-white">
       <Helmet>
-        <title>{safeSettings?.storeName || 'MO FASHION'} | Home</title>
+        <title>{siteSettings?.storeName || 'MO FASHION'} | Home</title>
       </Helmet>
 
       {/* Hero Section */}
       <section className="bg-[#1A1A1A] py-20 text-center border-b border-[#D4AF37]/20 relative overflow-hidden">
         <div className="container mx-auto px-4 relative z-10">
           <h1 className="text-4xl md:text-6xl font-serif font-bold text-white mb-6 uppercase tracking-widest leading-tight">
-            Welcome to <span className="text-[#D4AF37]">{safeSettings?.storeName || 'MO FASHION'}</span>
+            Welcome to <span className="text-[#D4AF37]">{siteSettings?.storeName || 'MO FASHION'}</span>
           </h1>
           <p className="text-gray-400 mb-10 max-w-2xl mx-auto text-lg md:text-xl font-light">
-            {safeSettings?.tagline || 'Premium E-Commerce Experience'}
+            {siteSettings?.tagline || 'Premium E-Commerce Experience'}
           </p>
           <Link to="/categories">
             <button className="bg-[#D4AF37] text-black px-10 py-4 rounded-lg hover:bg-white transition-all font-bold uppercase tracking-wider shadow-lg">
@@ -155,7 +178,6 @@ export default function Home() {
             NEW ARRIVALS
           </h2>
           
-          {/* 🚀 মোট প্রোডাক্ট সংখ্যা কাউন্টার */}
           {!loading && displayProducts.length > 0 && (
             <p className="text-xs text-gray-400 font-medium tracking-widest uppercase mt-2">
               Showing <span className="text-[#D4AF37] font-bold">{displayProducts.length}</span> {displayProducts.length === 1 ? 'Product' : 'Products'} Available
@@ -165,7 +187,7 @@ export default function Home() {
           <div className="w-24 h-1 bg-[#D4AF37] mx-auto opacity-50 rounded-full mt-4"></div>
         </div>
 
-        {loading ? (
+        {loading && displayProducts.length === 0 ? (
           <div className="text-center text-[#D4AF37] font-medium animate-pulse py-20 text-xl flex items-center justify-center gap-3">
             <RefreshCw size={24} className="animate-spin" />
             <span>Connecting to Live Cloud Database...</span>
@@ -191,9 +213,9 @@ export default function Home() {
                 : (product.imageUrl ? [product.imageUrl] : []);
 
               return (
-                <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/10 rounded-2xl p-4 text-center hover:border-[#D4AF37]/50 transition-all duration-500 group flex flex-col shadow-xl relative">
+                <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-2xl p-4 text-center hover:border-[#D4AF37]/60 transition-all duration-500 group flex flex-col shadow-xl relative">
                   
-                  {/* 🚀 Product Image Box with 2-Sec Auto-Slider */}
+                  {/* Product Image Box with 2-Sec Auto-Slider */}
                   <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-xl mb-4 bg-[#111111] aspect-[4/5]">
                     {productImages.length > 0 ? (
                       productImages.map((img: string, idx: number) => (
@@ -207,59 +229,61 @@ export default function Home() {
                         />
                       ))
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-600 uppercase text-xs tracking-widest">No Image</div>
-                    )}
-
-                    {/* 🚀 Daraz Style Discount Badge (Top Left) */}
-                    {discPercent > 0 && (
-                      <div className="absolute top-3 left-3 bg-gradient-to-r from-orange-500 to-red-600 text-white text-[10px] font-extrabold px-2.5 py-1 rounded shadow-lg z-10 flex items-center">
-                        <Tag size={10} className="mr-1" /> -{discPercent}% OFF
+                      <div className="w-full h-full flex flex-col items-center justify-center">
+                        <ImageIcon size={40} className="mb-2 opacity-30 text-gray-400" />
+                        <span className="text-xs uppercase tracking-widest text-gray-500">No Image</span>
                       </div>
                     )}
 
-                    {/* 🚀 Stock Badges (Top Right) */}
-                    {stockVal <= 0 || product.status === 'Out of Stock' ? (
-                      <span className="absolute top-3 right-3 bg-red-600/90 text-white text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
-                        Sold Out
-                      </span>
+                    {/* Discount Badge */}
+                    {discPercent > 0 && (
+                      <div className="absolute top-3 left-3 bg-gradient-to-r from-orange-500 to-red-600 text-white text-xs font-extrabold px-3 py-1.5 rounded shadow-lg z-10 flex items-center">
+                        <Tag size={12} className="mr-1" />
+                        -{discPercent}% OFF
+                      </div>
+                    )}
+
+                    {/* Stock Badges */}
+                    {product.status === 'Out of Stock' || stockVal === 0 ? (
+                      <span className="absolute top-3 right-3 bg-red-500/90 text-white text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">Sold Out</span>
                     ) : stockVal <= 5 ? (
-                      <span className="absolute top-3 right-3 bg-yellow-500/90 text-black text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
-                        Few Left ({stockVal})
-                      </span>
+                      <span className="absolute top-3 right-3 bg-yellow-500/90 text-black text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">Few Left ({stockVal})</span>
                     ) : (
-                      <span className="absolute top-3 right-3 bg-green-600/80 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm z-10 uppercase tracking-wider">
-                        In Stock
-                      </span>
+                      <span className="absolute top-3 right-3 bg-green-600/80 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm z-10 uppercase tracking-wider">In Stock</span>
                     )}
                   </Link>
                   
                   {/* Product Title */}
                   <Link to={`/product/${product._id || product.id}`}>
-                    <h3 className="font-bold text-white mb-1 hover:text-[#D4AF37] transition-colors line-clamp-1 px-2 uppercase tracking-tighter text-sm">
+                    <h3 className="font-bold text-white mb-1 hover:text-[#D4AF37] transition-colors line-clamp-2 px-2 uppercase tracking-tighter text-sm">
                       {product.name}
                     </h3>
                   </Link>
 
-                  {/* 🚀 Remaining Stock Highlight */}
+                  {/* Stock Status */}
                   <p className="text-[11px] text-gray-400 mb-3">
                     {stockVal > 0 ? `${stockVal} items remaining in stock` : <span className="text-red-400 font-bold">Currently unavailable</span>}
                   </p>
                   
-                  {/* 🚀 Price Section (Selling Price + Struck-through Original Price) */}
+                  {/* Price Section */}
                   <div className="mb-5 flex items-center justify-center space-x-2 mt-auto">
-                    <span className="text-[#D4AF37] font-bold text-xl">{safeSettings?.currency || '৳'} {sellingPrice.toFixed(2)}</span>
+                    <span className="text-[#D4AF37] font-bold text-xl">{siteSettings?.currency || '৳'} {sellingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     {discPercent > 0 && (
-                      <span className="text-gray-500 line-through text-xs">{safeSettings?.currency || '৳'} {origPrice.toFixed(2)}</span>
+                      <span className="text-gray-500 line-through text-xs">{siteSettings?.currency || '৳'} {origPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     )}
                   </div>
                   
                   <button 
-                    onClick={() => handleAddToCart(product)}
+                    onClick={(e) => handleAddToCart(product, e)}
                     disabled={stockVal <= 0 || product.status === 'Out of Stock'}
-                    className="w-full flex items-center justify-center space-x-2 border border-[#D4AF37] text-[#D4AF37] py-3 rounded-xl hover:bg-[#D4AF37] hover:text-black transition-all font-bold uppercase tracking-widest text-xs disabled:opacity-30 shadow-md"
+                    className={`w-full flex items-center justify-center space-x-2 border py-3 rounded-lg font-bold uppercase tracking-wider text-sm transition-all duration-300 ${
+                      stockVal <= 0 || product.status === 'Out of Stock'
+                      ? 'bg-[#111111] text-gray-500 border-gray-700 cursor-not-allowed' 
+                      : 'border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black shadow-[0_0_10px_rgba(212,175,55,0.1)]'
+                    }`}
                   >
-                    <ShoppingBag size={16} />
-                    <span>{stockVal <= 0 || product.status === 'Out of Stock' ? 'Out of Stock' : 'Add to Cart'}</span>
+                    <ShoppingBag size={18} />
+                    <span>{stockVal <= 0 || product.status === 'Out of Stock' ? 'OUT OF STOCK' : 'ADD TO CART'}</span>
                   </button>
                 </div>
               );
