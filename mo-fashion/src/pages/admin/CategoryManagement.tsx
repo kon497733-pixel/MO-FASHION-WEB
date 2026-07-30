@@ -7,50 +7,36 @@ export default function CategoryManagement() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadIndex, setUploadIndex] = useState<number | null>(null);
 
-  const [categories, setCategories] = useState<any[]>(() => {
-    const saved = localStorage.getItem('mo_fashion_categories');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // 🚀 Local Storage পুরোপুরি বাদ দেওয়া হয়েছে।
+  const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
 
   const [formData, setFormData] = useState({
-    id: '',
     _id: '',
     name: '',
     description: '',
     images: ['']
   });
 
-  // 🚀 ১. ক্লাউড ডাটাবেজ (MongoDB API) থেকে ক্যাটাগরি ফেচ করা
+  // 🚀 ১. শুধুমাত্র ডাটাবেজ (MongoDB API) থেকে আসল ক্যাটাগরি ফেচ করা
   const fetchCategories = async () => {
-    // ১. লোকালস্টোরেজ থেকে ইনস্ট্যান্ট লোড
-    const savedLocal = localStorage.getItem('mo_fashion_categories');
-    if (savedLocal) {
-      try {
-        setCategories(JSON.parse(savedLocal));
-      } catch (e) {}
-    }
-
-    // ২. ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম সিঙ্ক
     try {
       setLoading(true);
       const response = await fetch('http://localhost:5000/api/categories');
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          const formattedCats = data.map(item => ({
-            id: item._id || item.id,
-            _id: item._id || item.id,
-            ...item
-          }));
-          setCategories(formattedCats);
-          localStorage.setItem('mo_fashion_categories', JSON.stringify(formattedCats));
+          setCategories(data);
+        } else {
+          setCategories([]);
         }
       }
     } catch (e) {
-      console.warn("Backend API offline, using local cached categories.");
+      console.error("Database connection failed", e);
+      // ডাটাবেস এরর দিলেও কোনো ডামি ডাটা তৈরি হবে না
+      setCategories([]);
     } finally {
       setLoading(false);
     }
@@ -60,7 +46,7 @@ export default function CategoryManagement() {
     fetchCategories();
   }, []);
 
-  // 🚀 ২. আল্ট্রা-লাইটওয়েট ইমেজ কমপ্রেশন (অক্ষত রাখা হয়েছে)
+  // 🚀 ২. ইমেজ আপলোড হ্যান্ডলার (অক্ষত রাখা হয়েছে)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && uploadIndex !== null) {
@@ -69,7 +55,7 @@ export default function CategoryManagement() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 250; 
+          const MAX_WIDTH = 500; 
           const scaleFactor = Math.min(1, MAX_WIDTH / img.width);
           canvas.width = img.width * scaleFactor;
           canvas.height = img.height * scaleFactor;
@@ -80,11 +66,11 @@ export default function CategoryManagement() {
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           }
           
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.5); 
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6); 
           const updatedImages = [...formData.images];
           updatedImages[uploadIndex] = compressedBase64;
           setFormData({ ...formData, images: updatedImages });
-          toast.success('Image compressed & loaded!');
+          toast.success('Image loaded successfully!');
         };
         img.src = event.target?.result as string;
       };
@@ -94,16 +80,14 @@ export default function CategoryManagement() {
 
   const handleOpenAdd = () => {
     setModalMode('add');
-    setFormData({ id: '', _id: '', name: '', description: '', images: [''] });
+    setFormData({ _id: '', name: '', description: '', images: [''] });
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (category: any) => {
     setModalMode('edit');
-    const catId = category._id || category.id;
     setFormData({
-      id: catId,
-      _id: catId,
+      _id: category._id || '',
       name: category.name || '',
       description: category.description || '',
       images: category.images && category.images.length > 0 ? [...category.images] : ['']
@@ -111,20 +95,22 @@ export default function CategoryManagement() {
     setIsModalOpen(true);
   };
 
-  // 🚀 ৩. ক্লাউড ডাটাবেস থেকে ডিলিট করার API কল
+  // 🚀 ৩. ডাটাবেস থেকে ডিলিট করার API কল
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete category "${name}"?`)) {
-      const updated = categories.filter(c => (c._id || c.id) !== id);
-      setCategories(updated);
-      localStorage.setItem('mo_fashion_categories', JSON.stringify(updated));
-      toast.success("Category deleted!");
-
       try {
-        await fetch(`http://localhost:5000/api/categories/${id}`, {
+        const response = await fetch(`http://localhost:5000/api/categories/${id}`, {
           method: 'DELETE'
         });
+        
+        if (response.ok) {
+          setCategories(categories.filter(c => c._id !== id));
+          toast.success("Category deleted completely from database!");
+        } else {
+          toast.error("Failed to delete from database.");
+        }
       } catch (e) {
-        console.warn("Cloud delete failed, deleted locally.");
+        toast.error("Server connection error.");
       }
     }
   };
@@ -142,7 +128,7 @@ export default function CategoryManagement() {
     setFormData({ ...formData, images: updatedImages });
   };
 
-  // 🚀 ৪. ক্লাউড ডাটাবেসে সেভ করার API (POST/PUT)
+  // 🚀 ৪. ডাটাবেসে সেভ করার API (POST/PUT)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -154,31 +140,11 @@ export default function CategoryManagement() {
     const catData = {
       name: formData.name.trim(),
       description: formData.description?.trim() || '',
-      images: validImages.length > 0 ? validImages : ['https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=600&auto=format&fit=crop'],
-      image: validImages.length > 0 ? validImages[0] : 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=600&auto=format&fit=crop',
-      updatedAt: new Date().toISOString()
+      images: validImages.length > 0 ? validImages : ['https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=600&auto=format&fit=crop']
     };
 
-    const targetId = formData._id || formData.id || Date.now().toString();
-    const localCatObj = { id: targetId, _id: targetId, ...catData };
+    const toastId = toast.loading("Saving category to Database...");
 
-    let updatedList = [];
-    if (modalMode === 'add') {
-      updatedList = [localCatObj, ...categories];
-    } else {
-      updatedList = categories.map(c => (c._id || c.id) === targetId ? localCatObj : c);
-    }
-
-    // ১. লোকাল মেমোরিতে ইনস্ট্যান্ট সেভ
-    setCategories(updatedList);
-    localStorage.setItem('mo_fashion_categories', JSON.stringify(updatedList));
-    window.dispatchEvent(new Event('storage'));
-    window.dispatchEvent(new Event('categoriesUpdated'));
-
-    setIsModalOpen(false);
-    const toastId = toast.loading("Saving category to Cloud Database...");
-
-    // ২. ক্লাউড ডাটাবেসে (MongoDB API) সেভ করা
     try {
       let response;
       if (modalMode === 'add') {
@@ -188,7 +154,7 @@ export default function CategoryManagement() {
           body: JSON.stringify(catData)
         });
       } else {
-        response = await fetch(`http://localhost:5000/api/categories/${targetId}`, {
+        response = await fetch(`http://localhost:5000/api/categories/${formData._id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(catData)
@@ -196,14 +162,14 @@ export default function CategoryManagement() {
       }
 
       if (response.ok) {
-        toast.success("Category & Images saved LIVE on Cloud!", { id: toastId });
-        fetchCategories(); // ক্লাউডের অরিজিনাল ডাটা রিলোড
+        toast.success(`Category ${modalMode === 'add' ? 'added' : 'updated'} successfully!`, { id: toastId });
+        fetchCategories(); // ক্লাউড ডাটাবেস থেকে ফ্রেশ ডাটা লোড করা
+        setIsModalOpen(false);
       } else {
-        toast.success("Category saved successfully!", { id: toastId });
+        toast.error("Failed to save category.", { id: toastId });
       }
     } catch (e: any) {
-      console.warn("Cloud Sync warning:", e);
-      toast.success("Category saved locally!", { id: toastId });
+      toast.error("Server connection failed! Make sure backend is running.", { id: toastId });
     }
   };
 
@@ -222,12 +188,14 @@ export default function CategoryManagement() {
       </div>
 
       <div className="bg-[#1A1A1A] rounded-xl border border-[#D4AF37]/20 p-6 shadow-xl">
-        {loading && categories.length === 0 ? (
-          <div className="text-center text-[#D4AF37] animate-pulse py-10">Loading Cloud Categories...</div>
+        {loading ? (
+          <div className="text-center text-[#D4AF37] animate-pulse py-10">Loading Database Categories...</div>
+        ) : categories.length === 0 ? (
+          <div className="text-center text-gray-500 py-10">No categories found in Database. Please add a category.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {categories.map((cat: any) => (
-              <div key={cat._id || cat.id} className="bg-[#111111] p-4 rounded-xl border border-gray-800 space-y-3 shadow-md">
+              <div key={cat._id} className="bg-[#111111] p-4 rounded-xl border border-gray-800 space-y-3 shadow-md">
                 <div className="h-44 bg-[#1A1A1A] rounded-lg overflow-hidden relative border border-gray-800">
                   {cat.images && cat.images[0] ? (
                     <img src={cat.images[0]} alt={cat.name} className="w-full h-full object-cover" />
@@ -243,7 +211,7 @@ export default function CategoryManagement() {
                 <p className="text-xs text-gray-400 line-clamp-2">{cat.description || 'No description provided'}</p>
                 <div className="flex justify-end space-x-2 pt-2 border-t border-gray-800">
                   <button onClick={() => handleOpenEdit(cat)} className="p-2 text-gray-400 hover:text-[#D4AF37]"><Edit size={16} /></button>
-                  <button onClick={() => handleDelete(cat._id || cat.id, cat.name)} className="p-2 text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
+                  <button onClick={() => handleDelete(cat._id, cat.name)} className="p-2 text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
                 </div>
               </div>
             ))}
@@ -271,7 +239,6 @@ export default function CategoryManagement() {
                 <textarea rows={3} placeholder="Description..." value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full bg-[#111111] border border-gray-700 p-3 rounded-lg text-white resize-none focus:border-[#D4AF37] focus:outline-none" />
               </div>
 
-              {/* Multiple Images with Desktop Upload Support */}
               <div className="space-y-3 pt-2">
                 <label className="block text-xs text-[#D4AF37] font-bold">Category Slideshow Images (Desktop or URLs)</label>
                 {formData.images.map((img, i) => (
@@ -300,7 +267,7 @@ export default function CategoryManagement() {
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-gray-800">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2 border border-gray-700 rounded-lg text-gray-300 font-medium">Cancel</button>
-                <button type="submit" className="bg-[#D4AF37] text-black px-6 py-2 rounded-lg font-bold hover:bg-white transition-all shadow-md">Save Category & Push Live</button>
+                <button type="submit" className="bg-[#D4AF37] text-black px-6 py-2 rounded-lg font-bold hover:bg-white transition-all shadow-md">Save Category to Database</button>
               </div>
             </form>
           </div>
