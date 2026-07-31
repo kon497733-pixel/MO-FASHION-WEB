@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Edit, Trash2, X, Image as ImageIcon, Folder, Upload, Eye, Package, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, X, Image as ImageIcon, Folder, Upload, Eye, Package, CheckCircle, XCircle, Tag } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
 
@@ -8,14 +8,14 @@ export default function CategoryManagement() {
   const [uploadIndex, setUploadIndex] = useState<number | null>(null);
 
   const [categories, setCategories] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]); // 🚀 প্রোডাক্ট লিস্ট রাখার স্টেট
+  const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // মোডাল স্টেটস
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
 
-  // 🚀 ক্যাটাগরির প্রোডাক্ট দেখার মোডাল স্টেট
+  // ক্যাটাগরির প্রোডাক্ট দেখার মোডাল স্টেট
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedCategoryForView, setSelectedCategoryForView] = useState<any>(null);
 
@@ -26,7 +26,7 @@ export default function CategoryManagement() {
     images: ['']
   });
 
-  // 🚀 ১. ডাটাবেজ (MongoDB API) ও লোকাল স্টোরেজ থেকে ক্যাটাগরি ও প্রোডাক্ট ফেচ করা
+  // ১. ডাটাবেজ (MongoDB API) ও লোকাল স্টোরেজ থেকে ক্যাটাগরি ও প্রোডাক্ট ফেচ করা
   const fetchCategoriesAndProducts = async () => {
     try {
       setLoading(true);
@@ -65,7 +65,7 @@ export default function CategoryManagement() {
     fetchCategoriesAndProducts();
   }, []);
 
-  // 🚀 ২. ইমেজ আপলোড হ্যান্ডলার (অক্ষত রাখা হয়েছে)
+  // ২. ইমেজ আপলোড হ্যান্ডলার (অক্ষত রাখা হয়েছে)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && uploadIndex !== null) {
@@ -114,7 +114,7 @@ export default function CategoryManagement() {
     setIsModalOpen(true);
   };
 
-  // 🚀 ৩. ডাটাবেস থেকে ডিলিট করার API কল
+  // ৩. ডাটাবেস থেকে ডিলিট করার API কল
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete category "${name}"?`)) {
       try {
@@ -147,7 +147,7 @@ export default function CategoryManagement() {
     setFormData({ ...formData, images: updatedImages });
   };
 
-  // 🚀 ৪. ডাটাবেসে সেভ করার API (POST/PUT)
+  // ৪. ডাটাবেসে সেভ করার API (POST/PUT)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -214,7 +214,6 @@ export default function CategoryManagement() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {categories.map((cat: any) => {
-              // 🚀 এই ক্যাটাগরিতে কয়টি প্রোডাক্ট আছে তার হিসাব
               const catProducts = products.filter(p => 
                 String(p.category || '').trim().toLowerCase() === String(cat.name || '').trim().toLowerCase()
               );
@@ -236,7 +235,6 @@ export default function CategoryManagement() {
 
                     <div className="flex justify-between items-center">
                       <h3 className="font-bold text-lg text-white">{cat.name}</h3>
-                      {/* 🚀 প্রোডাক্ট সংখ্যা প্রদর্শন */}
                       <span className="text-xs bg-[#D4AF37]/10 text-[#D4AF37] px-2.5 py-1 rounded-full font-bold border border-[#D4AF37]/20">
                         {catProducts.length} {catProducts.length === 1 ? 'Product' : 'Products'}
                       </span>
@@ -245,9 +243,7 @@ export default function CategoryManagement() {
                     <p className="text-xs text-gray-400 line-clamp-2">{cat.description || 'No description provided'}</p>
                   </div>
 
-                  {/* বাটনসমূহ */}
                   <div className="flex justify-end space-x-2 pt-3 border-t border-gray-800 mt-2">
-                    {/* 🚀 প্রোডাক্ট দেখার বাটন (Eye Button) */}
                     <button 
                       onClick={() => { setSelectedCategoryForView(cat); setIsViewModalOpen(true); }} 
                       className="p-2 text-gray-400 hover:text-[#D4AF37] bg-[#1A1A1A] border border-gray-800 rounded-md transition-colors"
@@ -295,7 +291,10 @@ export default function CategoryManagement() {
                   .map((p: any, idx: number) => {
                     const stockVal = Number(p.stock) || 0;
                     const soldVal = Number(p.sold) || 0;
-                    const priceVal = Number(p.price) || 0;
+                    const origPrice = Number(p.price) || 0;
+                    const discPercent = Number(p.discount) || 0;
+                    // 🚀 ডিসকাউন্টের পর আসল বিক্রয়মূল্য হিসাব
+                    const sellingPrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
                     const isOutOfStock = stockVal <= 0 || p.status === 'Out of Stock';
 
                     return (
@@ -309,18 +308,38 @@ export default function CategoryManagement() {
                             )}
                           </div>
                           <div>
-                            <h4 className="font-bold text-white text-sm line-clamp-1">{p.name}</h4>
-                            <p className="text-xs text-[#D4AF37] font-semibold mt-0.5">Price: ৳{priceVal.toFixed(2)}</p>
+                            {/* 🚀 প্রোডাক্টের নাম এবং ডিসকাউন্ট ব্যাজ */}
+                            <div className="flex items-center space-x-2">
+                              <h4 className="font-bold text-white text-sm line-clamp-1">{p.name}</h4>
+                              {discPercent > 0 && (
+                                <span className="text-[10px] font-extrabold text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded flex items-center shrink-0">
+                                  <Tag size={10} className="mr-1" />
+                                  -{discPercent}% OFF
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 🚀 অরিজিনাল প্রাইস এবং ডিসকাউন্টেড প্রাইস */}
+                            <div className="flex items-center space-x-2 mt-1">
+                              <span className="text-xs text-[#D4AF37] font-bold">
+                                Price: ৳{sellingPrice.toFixed(2)}
+                              </span>
+                              {discPercent > 0 && (
+                                <span className="text-[11px] text-gray-500 line-through">
+                                  ৳{origPrice.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
                         <div className="flex items-center space-x-3 text-xs w-full sm:w-auto justify-between sm:justify-end">
-                          {/* 🚀 সোল্ড সংখ্যা (Sold Count) */}
+                          {/* সোল্ড সংখ্যা */}
                           <div className="bg-[#1A1A1A] px-3 py-1.5 rounded-lg border border-gray-800 text-gray-300">
                             Sold: <span className="text-[#D4AF37] font-bold">{soldVal}</span>
                           </div>
 
-                          {/* 🚀 স্টক স্ট্যাটাস ও বাকি থাকা সংখ্যা */}
+                          {/* স্টক স্ট্যাটাস ও বাকি থাকা সংখ্যা */}
                           <div className="bg-[#1A1A1A] px-3 py-1.5 rounded-lg border border-gray-800">
                             {isOutOfStock ? (
                               <span className="text-red-400 font-bold flex items-center"><XCircle size={12} className="mr-1"/> Out of Stock</span>
