@@ -11,8 +11,10 @@ export default function Products() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadIndex, setUploadIndex] = useState<number | null>(null);
 
+  // 🚀 মঙ্গোডিবি ক্লাউড এপিআই লিঙ্ক
   const API_URL = 'http://localhost:5000/api/products';
 
+  // পুরনো ডামি প্রোডাক্ট অটোমেটিক মুছে ফেলার ফিল্টার
   const sanitizeProducts = (productList: any[]) => {
     if (!Array.isArray(productList)) return [];
     return productList.filter((p: any) => {
@@ -48,13 +50,14 @@ export default function Products() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   
-  // 🚀 ফর্মে variants স্টেট যুক্ত করা হলো
+  // 🚀 ফর্মে variants এর জন্য নতুন স্টেট যুক্ত করা হলো
   const [formData, setFormData] = useState({
     _id: '', id: '', name: '', description: '', category: '',
     price: '', discount: '0', stock: '', status: 'Active', images: [''],
-    variants: [] as { name: string, options: string }[] // 🚀 ডাইনামিক অপশন বক্স
+    variants: [] as { name: string, options: string }[] // ডাইনামিক অপশন বক্স
   });
 
+  // ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম প্রোডাক্ট ফেচ
   const fetchProducts = async () => {
     const savedLocal = localStorage.getItem('mo_fashion_products');
     if (savedLocal) {
@@ -123,11 +126,12 @@ export default function Products() {
       stock: product.stock !== undefined ? product.stock.toString() : '0',
       status: product.status || 'Active',
       images: product.images && product.images.length > 0 ? [...product.images] : (product.imageUrl ? [product.imageUrl] : ['']),
-      variants: loadedVariants
+      variants: loadedVariants // ভ্যারিয়েন্টস লোড করা হলো
     });
     setIsModalOpen(true);
   };
 
+  // ইমেজ কমপ্রেশন
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && uploadIndex !== null) {
@@ -170,7 +174,7 @@ export default function Products() {
     setFormData({ ...formData, images: updatedImages });
   };
 
-  // 🚀 ডাইনামিক ভ্যারিয়েন্ট (Color, Size etc) হ্যান্ডলার
+  // 🚀 ডাইনামিক ভ্যারিয়েন্ট (Color, Size, Material etc) হ্যান্ডলার
   const addVariantField = () => {
     setFormData({ ...formData, variants: [...formData.variants, { name: '', options: '' }] });
   };
@@ -189,7 +193,6 @@ export default function Products() {
       const remaining = products.filter(p => (p._id || p.id) !== id);
       setProducts(remaining);
       localStorage.setItem('mo_fashion_products', JSON.stringify(remaining));
-
       toast.success("Product deleted!");
 
       try {
@@ -221,7 +224,7 @@ export default function Products() {
         options: v.options.split(',').map(opt => opt.trim()).filter(Boolean)
       }));
 
-    // ব্যাকএন্ডের পুরানো মডেলের সাপোর্টের জন্য কালার এবং সাইজ আলাদা করা
+    // ব্যাকএন্ডের পুরানো মডেলের সাপোর্টের জন্য
     const colorVar = formattedVariants.find(v => v.name.toLowerCase() === 'color' || v.name.toLowerCase() === 'colors');
     const sizeVar = formattedVariants.find(v => v.name.toLowerCase() === 'size' || v.name.toLowerCase() === 'sizes');
 
@@ -235,9 +238,9 @@ export default function Products() {
       category: formData.category || (categories.length > 0 ? categories[0].name : "Men's Collection"),
       images: validImages.length > 0 ? validImages : ['https://via.placeholder.com/600x600?text=No+Image'],
       imageUrl: validImages.length > 0 ? validImages[0] : '',
-      variants: formattedVariants, // 🚀 ডাইনামিক ভ্যারিয়েন্টগুলো সেভ করা হচ্ছে
-      colors: colorVar ? colorVar.options : [], // ব্যাকএন্ড সাপোর্টের জন্য
-      sizes: sizeVar ? sizeVar.options : []     // ব্যাকএন্ড সাপোর্টের জন্য
+      variants: formattedVariants, // 🚀 ডাইনামিক ভ্যারিয়েন্ট ডাটাবেসের জন্য রেডি
+      colors: colorVar ? colorVar.options : [], 
+      sizes: sizeVar ? sizeVar.options : []     
     };
 
     const targetId = formData._id || formData.id || Date.now().toString();
@@ -364,7 +367,7 @@ export default function Products() {
 
                   const displayImage = p.images && p.images.length > 0 ? p.images[0] : (p.imageUrl || '');
                   
-                  // 🚀 টেবিলে ডাইনামিক ভ্যারিয়েন্ট অপশন কাউন্ট দেখানো হচ্ছে
+                  // 🚀 টেবিলে অপশন কাউন্ট
                   const variantCount = p.variants ? p.variants.length : ((p.colors?.length > 0 ? 1 : 0) + (p.sizes?.length > 0 ? 1 : 0));
 
                   return (
@@ -474,7 +477,7 @@ export default function Products() {
                 <label className="block text-gray-300 text-sm mb-2 font-medium">Product Description</label>
                 <textarea 
                   required
-                  rows={3}
+                  rows={4}
                   value={formData.description}
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
                   className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors resize-none"
