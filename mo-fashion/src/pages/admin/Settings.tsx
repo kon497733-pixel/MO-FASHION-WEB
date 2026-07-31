@@ -11,12 +11,18 @@ export default function Settings() {
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const aboutFileInputRef = useRef<HTMLInputElement>(null);
 
+  // 🚀 ডায়নামিক API ইউআরএল (যাতে মোবাইল বা পিসি যেকোনো ডিভাইস থেকে ক্লাউড ডাটাবেসে সেভ হয়)
+  const getApiUrl = () => {
+    const hostname = window.location.hostname || 'localhost';
+    return `http://${hostname}:5000/api/settings`;
+  };
+
   // ডিফল্ট সেটিংস ডাটা
   const defaultSettings = {
     storeName: 'MO FASHION',
     logoUrl: '', 
     aboutImageUrl: '', 
-    tagline: 'Premium E-Commerce Experience.',
+    tagline: 'Premium E-Commerce Experience. OWNER - MD.MEHEDI HASAN . (1589)',
     contactEmail: 'kon497733@gmail.com',
     phoneNumber: '+880 1707697445',
     address: 'CDA Agrabad, Chattogram, Bangladesh',
@@ -42,7 +48,7 @@ export default function Settings() {
   // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম সেটিংস লোড করা
   useEffect(() => {
     const fetchCloudSettings = async () => {
-      // ১. প্রথমে লোকাল স্টোরেজ থেকে ইনস্ট্যান্ট লোড
+      // ১. প্রথমে লোকাল মেমোরি থেকে ইনস্ট্যান্ট লোড
       const savedSettings = localStorage.getItem('mo_fashion_settings');
       if (savedSettings) {
         try {
@@ -54,7 +60,7 @@ export default function Settings() {
 
       // ২. ক্লাউড ডাটাবেস (MongoDB Backend) থেকে সিঙ্ক করা
       try {
-        const response = await fetch('http://localhost:5000/api/settings');
+        const response = await fetch(getApiUrl());
         if (response.ok) {
           const cloudData = await response.json();
           if (cloudData && Object.keys(cloudData).length > 0) {
@@ -165,7 +171,7 @@ export default function Settings() {
     setLocalSettings({ ...localSettings, faqs: updatedFaqs });
   };
 
-  // 🚀 ৪. ক্লাউড ডাটাবেসে ইনস্ট্যান্ট সেভ (PUT Request)
+  // 🚀 ৪. ক্লাউড ডাটাবেসে সেভ (PUT Request)
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -173,17 +179,17 @@ export default function Settings() {
     window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new Event('settingsUpdated'));
 
-    const toastId = toast.loading("Saving settings LIVE to Cloud Database...");
+    const toastId = toast.loading("Saving settings LIVE to MongoDB Cloud Database...");
 
     try {
-      const response = await fetch('http://localhost:5000/api/settings', {
+      const response = await fetch(getApiUrl(), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(localSettings)
       });
 
       if (response.ok) {
-        toast.success('Settings updated LIVE in Cloud Database! 🎉', { id: toastId });
+        toast.success('Settings saved LIVE in Cloud Database! 🎉', { id: toastId });
       } else {
         toast.success('Settings saved successfully!', { id: toastId });
       }

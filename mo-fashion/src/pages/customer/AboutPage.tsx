@@ -11,6 +11,12 @@ export default function About() {
     aboutImageUrl: ''
   });
 
+  // 🚀 ডায়নামিক API ইউআরএল (যাতে যেকোনো মোবাইল বা পিসি থেকে ক্লাউড সেটিং লোড হয়)
+  const getApiUrl = () => {
+    const hostname = window.location.hostname || 'localhost';
+    return `http://${hostname}:5000/api/settings`;
+  };
+
   // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম এবাউট সেটিং লোড করা
   useEffect(() => {
     const fetchAboutSettings = async () => {
@@ -26,7 +32,7 @@ export default function About() {
 
       // ২. ক্লাউড ডাটাবেস (MongoDB Backend) থেকে সিঙ্ক করা
       try {
-        const response = await fetch('http://localhost:5000/api/settings');
+        const response = await fetch(getApiUrl());
         if (response.ok) {
           const cloudData = await response.json();
           if (cloudData && Object.keys(cloudData).length > 0) {

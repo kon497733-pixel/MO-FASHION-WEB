@@ -7,6 +7,12 @@ export default function Footer() {
   const { settings } = useSettingsStore();
   const safeSettings = settings as any;
 
+  // 🚀 ডায়নামিক API ইউআরএল (যাতে যেকোনো মোবাইল বা পিসি থেকে সেভড সেটিংস লোড হয়)
+  const getApiUrl = () => {
+    const hostname = window.location.hostname || 'localhost';
+    return `http://${hostname}:5000/api/settings`;
+  };
+
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
     logoUrl: '',
@@ -40,7 +46,7 @@ export default function Footer() {
 
       // ২. লাইভ ক্লাউড ডাটাবেস (MongoDB Backend) থেকে সিঙ্ক করা
       try {
-        const response = await fetch('http://localhost:5000/api/settings');
+        const response = await fetch(getApiUrl());
         if (response.ok) {
           const cloudData = await response.json();
           if (cloudData && Object.keys(cloudData).length > 0) {

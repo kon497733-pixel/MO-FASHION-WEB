@@ -10,6 +10,12 @@ export default function Navbar() {
   const items = useCartStore((state) => state.items);
   const cartCount = items.reduce((total: number, item: any) => total + (item.quantity || 1), 0);
 
+  // 🚀 ডায়নামিক API ইউআরএল (যাতে যেকোনো মোবাইল বা পিসি থেকে সেভড লোগো লোড হয়)
+  const getApiUrl = () => {
+    const hostname = window.location.hostname || 'localhost';
+    return `http://${hostname}:5000/api/settings`;
+  };
+
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
     logoUrl: ''
@@ -35,7 +41,7 @@ export default function Navbar() {
 
       // ২. লাইভ ক্লাউড ডাটাবেস (MongoDB Backend) থেকে রিয়েল-টাইম লোগো সিঙ্ক করা
       try {
-        const response = await fetch('http://localhost:5000/api/settings');
+        const response = await fetch(getApiUrl());
         if (response.ok) {
           const cloudData = await response.json();
           if (cloudData && Object.keys(cloudData).length > 0) {
