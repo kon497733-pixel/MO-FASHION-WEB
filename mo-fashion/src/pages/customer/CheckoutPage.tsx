@@ -152,17 +152,60 @@ export default function CheckoutPage() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  // 🚀 ফোন নাম্বার ভ্যালিডেশন (বাংলাদেশি ১১ ডিজিটের নাম্বার)
+  const validatePhone = (phone: string) => {
+    const cleanPhone = phone.replace(/[\s-]/g, '');
+    const bdPhoneRegex = /^(?:\+?88)?01[3-9]\d{8}$/;
+    return bdPhoneRegex.test(cleanPhone);
+  };
+
+  // 🚀 ইমেইল ভ্যালিডেশন (ফাঁকা রাখলে ভ্যালিড, কিন্তু টাইপ করলে ফরম্যাট সঠিক হতে হবে)
+  const validateEmail = (email: string) => {
+    if (!email.trim()) return true; // অপশনাল
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email.trim());
+  };
+
+  // 🚀 প্লেস অর্ডার লজিক
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault(); 
     
+    // ১. কার্ট চেক
     if (items.length === 0) {
       toast.error("Your cart is empty!");
       return;
     }
-    if (!formData.city) {
-      toast.error("Please select or enter your City/District.");
+
+    // ২. নাম ভ্যালিডেশন
+    if (!formData.firstName.trim() || !formData.lastName.trim()) {
+      toast.error("Please enter both First Name and Last Name!");
       return;
     }
+
+    // ৩. ফোন নাম্বার সঠিকতার ভ্যালিডেশন
+    if (!validatePhone(formData.phone)) {
+      toast.error("Please enter a valid Bangladeshi Phone Number (e.g. 01712345678)!");
+      return;
+    }
+
+    // ৪. ইমেইল ফরম্যাট ভ্যালিডেশন (যদি দেওয়া হয়)
+    if (!validateEmail(formData.email)) {
+      toast.error("Please enter a valid Email Address!");
+      return;
+    }
+
+    // ৫. ঠিকানা ও জেলা ভ্যালিডেশন
+    if (!formData.address.trim()) {
+      toast.error("Please enter your full address!");
+      return;
+    }
+
+    if (!formData.city.trim()) {
+      toast.error("Please select or enter your City/District!");
+      return;
+    }
+
+    // ৬. পেমেন্ট মেথড চেক
     if (!paymentMethod) {
       toast.error("Please select a payment method.");
       return;
@@ -172,16 +215,25 @@ export default function CheckoutPage() {
     const toastId = toast.loading("Processing your order securely...");
 
     const orderId = `#ORD-${Math.floor(100000 + Math.random() * 900000)}`;
-    const customerName = `${formData.firstName} ${formData.lastName}`.trim();
-    const customerEmail = formData.email.trim() || `${formData.phone}@nofashion.com`;
+    const customerName = `${formData.firstName.trim()} ${formData.lastName.trim()}`;
+    const customerEmail = formData.email.trim() || `${formData.phone.trim()}@mofashion.com`;
 
     const orderPayload = {
       orderId: orderId,
       customer: customerName,
-      customerInfo: { ...formData, email: customerEmail },
+      customerInfo: {
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        email: customerEmail,
+        phone: formData.phone.trim(),
+        address: formData.address.trim(),
+        city: formData.city.trim(),
+        postalCode: formData.postalCode.trim() || 'N/A',
+        country: 'Bangladesh'
+      },
       email: customerEmail,
-      phone: formData.phone,
-      address: `${formData.address}, ${formData.city} ${formData.postalCode ? '- ' + formData.postalCode : ''}, ${formData.country}`,
+      phone: formData.phone.trim(),
+      address: `${formData.address.trim()}, ${formData.city.trim()}${formData.postalCode.trim() ? ' - ' + formData.postalCode.trim() : ''}, Bangladesh`,
       date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
       createdAt: new Date().toISOString(),
       total: totalAmount,
@@ -242,12 +294,23 @@ export default function CheckoutPage() {
         localStorage.setItem('mo_fashion_coupons', JSON.stringify(updatedCoupons));
       }
 
-      // 🚀 ৩. লোকাল স্টোরেজে অর্ডার ও কাস্টমার সেভ করা
+      // 🚀 ৩. ক্লাউড ডাটাবেসে সেভ (POST API Call)
+      try {
+        await fetch('http://localhost:5000/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderPayload)
+        });
+      } catch (err) {
+        console.warn("Cloud Sync warning: Backend offline, saving locally.");
+      }
+
+      // 🚀 ৪. লোকাল স্টোরেজে ব্যাকআপ সেভ করা
       const existingOrders = JSON.parse(localStorage.getItem('mo_fashion_orders') || '[]');
       localStorage.setItem('mo_fashion_orders', JSON.stringify([orderPayload, ...existingOrders]));
 
       const existingCustomers = JSON.parse(localStorage.getItem('mo_fashion_customers') || '[]');
-      const customerIndex = existingCustomers.findIndex((c: any) => c.phone === formData.phone || (c.email && c.email === customerEmail));
+      const customerIndex = existingCustomers.findIndex((c: any) => c.phone === formData.phone.trim());
       
       if (customerIndex >= 0) {
         existingCustomers[customerIndex].orders += 1;
@@ -257,7 +320,7 @@ export default function CheckoutPage() {
           id: `CUST-${Math.floor(100 + Math.random() * 900)}`,
           name: customerName,
           email: customerEmail,
-          phone: formData.phone,
+          phone: formData.phone.trim(),
           orders: 1,
           spent: totalAmount,
           status: 'Active',
@@ -265,13 +328,6 @@ export default function CheckoutPage() {
         });
       }
       localStorage.setItem('mo_fashion_customers', JSON.stringify(existingCustomers));
-
-      // 🚀 ৪. ক্লাউড ডাটাবেসে সেভ (POST API Call)
-      await fetch('http://localhost:5000/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload)
-      }).catch(() => null);
 
       toast.success(`Order ${orderId} placed successfully!`, { id: toastId });
       clearCart();
@@ -320,20 +376,21 @@ export default function CheckoutPage() {
                     <input type="text" name="firstName" required value={formData.firstName} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. Mehedi" />
                   </div>
                   <div>
-                    <label className="block text-gray-400 text-sm mb-2">Last Name</label>
-                    <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. Hasan" />
+                    <label className="block text-gray-400 text-sm mb-2">Last Name *</label>
+                    <input type="text" name="lastName" required value={formData.lastName} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. Hasan" />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    {/* 🚀 ইমেইল এখন অপশনাল */}
+                    {/* ইমেইল অপশনাল */}
                     <label className="block text-gray-400 text-sm mb-2">Email Address <span className="text-xs text-gray-500">(Optional)</span></label>
                     <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. mail@example.com (optional)" />
                   </div>
                   <div>
-                    <label className="block text-gray-400 text-sm mb-2">Phone Number *</label>
-                    <input type="tel" name="phone" required value={formData.phone} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. 017..." />
+                    {/* ফোন নাম্বার ভ্যালিডেশন সহ */}
+                    <label className="block text-gray-400 text-sm mb-2">Phone Number * <span className="text-xs text-gray-500">(e.g. 01712345678)</span></label>
+                    <input type="tel" name="phone" required value={formData.phone} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. 01712345678" />
                   </div>
                 </div>
 
@@ -344,7 +401,7 @@ export default function CheckoutPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   
-                  {/* 🚀 টাইপ করার সুবিধাসহ সিটির স্মুথ ড্রপডাউন */}
+                  {/* সিটির ড্রপডাউন */}
                   <div className="relative" ref={cityRef}>
                     <label className="block text-gray-400 text-sm mb-2">City / District *</label>
                     <input 
