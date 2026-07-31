@@ -38,9 +38,12 @@ export default function CategoriesPage() {
 
         if (Array.isArray(fetchedCategories)) {
           const enrichedCategories = fetchedCategories.map((cat: any) => {
-            // 🚀 Strict Product Count: অ্যাডমিন প্যানেলে সিলেক্ট করা ক্যাটাগরির সাথে হুবহু মিললেই গুনবে
+            // 🚀 Smart Case-Insensitive Matching: অক্ষরের ছোট-বড় হাত বা স্পেসের অমিল থাকলেও সঠিক সংখ্যা গুনে বের করবে
             const count = Array.isArray(fetchedProducts) 
-              ? fetchedProducts.filter((p: any) => p.category === cat.name).length 
+              ? fetchedProducts.filter((p: any) => {
+                  if (!p || !p.category || !cat.name) return false;
+                  return String(p.category).trim().toLowerCase() === String(cat.name).trim().toLowerCase();
+                }).length 
               : 0;
             
             // 🚀 স্লাইডশোর জন্য সব ভ্যালিড ইমেজ বের করা
