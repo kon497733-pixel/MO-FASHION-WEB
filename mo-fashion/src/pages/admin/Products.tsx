@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Search, Edit, Trash2, X, Package, 
-  Image as ImageIcon, Percent, Upload, Tag, Box
+  Image as ImageIcon, Percent, Upload, Box, ListPlus
 } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
@@ -11,16 +11,13 @@ export default function Products() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadIndex, setUploadIndex] = useState<number | null>(null);
 
-  // 🚀 মঙ্গোডিবি ক্লাউড এপিআই লিঙ্ক
   const API_URL = 'http://localhost:5000/api/products';
 
-  // 🚀 ১. পুরনো ৪টি ডামি প্রোডাক্ট অটোমেটিক মুছে ফেলার ফিল্টার (Sanitizer)
   const sanitizeProducts = (productList: any[]) => {
     if (!Array.isArray(productList)) return [];
     return productList.filter((p: any) => {
       if (!p || !p.name) return false;
       const nameLower = String(p.name).toLowerCase();
-      // আগের ৪টি পুরনো ডামি প্রোডাক্টের নাম ফিল্টার করা হলো
       const isOldDummy = nameLower.includes('premium gold t-shirt') || 
                           nameLower.includes('black signature hoodie') || 
                           nameLower.includes('classic denim jacket') || 
@@ -51,14 +48,14 @@ export default function Products() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   
+  // 🚀 ফর্মে variants স্টেট যুক্ত করা হলো
   const [formData, setFormData] = useState({
     _id: '', id: '', name: '', description: '', category: '',
     price: '', discount: '0', stock: '', status: 'Active', images: [''],
+    variants: [] as { name: string, options: string }[] // 🚀 ডাইনামিক অপশন বক্স
   });
 
-  // 🚀 ২. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম প্রোডাক্ট ফেচ ও ফিল্টার করা
   const fetchProducts = async () => {
-    // ১. লোকালস্টোরেজ থেকে ডাটা নিয়ে ফিল্টার করা
     const savedLocal = localStorage.getItem('mo_fashion_products');
     if (savedLocal) {
       try {
@@ -68,7 +65,6 @@ export default function Products() {
       } catch (e) {}
     }
 
-    // ২. ক্লাউড ডাটাবেস থেকে লাইভ সিঙ্ক করা
     try {
       setLoading(true);
       const response = await fetch(API_URL);
@@ -89,8 +85,6 @@ export default function Products() {
 
   useEffect(() => {
     fetchProducts();
-    
-    // ক্যাটাগরিগুলো নিয়ে আসা
     const savedCategories = JSON.parse(localStorage.getItem('mo_fashion_categories') || '[]');
     setCategories(savedCategories.length > 0 ? savedCategories : [{ name: "Men's Collection" }]);
   }, []);
@@ -101,7 +95,8 @@ export default function Products() {
     setFormData({ 
       _id: newId, id: newId, name: '', description: '', 
       category: categories.length > 0 ? categories[0].name : "Men's Collection", 
-      price: '', discount: '0', stock: '10', status: 'Active', images: [''] 
+      price: '', discount: '0', stock: '10', status: 'Active', images: [''],
+      variants: [] // 🚀 নতুন প্রোডাক্টে কোনো ডিফল্ট অপশন থাকবে না
     });
     setIsModalOpen(true);
   };
@@ -109,6 +104,14 @@ export default function Products() {
   const handleOpenEdit = (product: any) => {
     setModalMode('edit');
     const targetId = product._id || product.id;
+    
+    // 🚀 পুরোনো প্রোডাক্টের কালার/সাইজ থাকলে সেগুলোকে ডাইনামিক বক্সে রূপান্তর করা
+    let loadedVariants = product.variants ? product.variants.map((v: any) => ({ name: v.name, options: v.options.join(', ') })) : [];
+    if (loadedVariants.length === 0) {
+      if (product.colors && product.colors.length > 0) loadedVariants.push({ name: 'Color', options: product.colors.join(', ') });
+      if (product.sizes && product.sizes.length > 0) loadedVariants.push({ name: 'Size', options: product.sizes.join(', ') });
+    }
+
     setFormData({
       _id: targetId,
       id: targetId,
@@ -119,12 +122,12 @@ export default function Products() {
       discount: (product.discount !== undefined && product.discount !== null) ? product.discount.toString() : '0',
       stock: product.stock !== undefined ? product.stock.toString() : '0',
       status: product.status || 'Active',
-      images: product.images && product.images.length > 0 ? [...product.images] : (product.imageUrl ? [product.imageUrl] : [''])
+      images: product.images && product.images.length > 0 ? [...product.images] : (product.imageUrl ? [product.imageUrl] : ['']),
+      variants: loadedVariants
     });
     setIsModalOpen(true);
   };
 
-  // 🚀 ৩. আল্ট্রা-লাইটওয়েট ইমেজ কমপ্রেশন
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && uploadIndex !== null) {
@@ -167,7 +170,20 @@ export default function Products() {
     setFormData({ ...formData, images: updatedImages });
   };
 
-  // 🚀 ৪. ডিলিট লজিক
+  // 🚀 ডাইনামিক ভ্যারিয়েন্ট (Color, Size etc) হ্যান্ডলার
+  const addVariantField = () => {
+    setFormData({ ...formData, variants: [...formData.variants, { name: '', options: '' }] });
+  };
+  const removeVariantField = (index: number) => {
+    const updatedVariants = formData.variants.filter((_, i) => i !== index);
+    setFormData({ ...formData, variants: updatedVariants });
+  };
+  const handleVariantChange = (index: number, field: 'name' | 'options', value: string) => {
+    const updatedVariants = [...formData.variants];
+    updatedVariants[index][field] = value;
+    setFormData({ ...formData, variants: updatedVariants });
+  };
+
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
       const remaining = products.filter(p => (p._id || p.id) !== id);
@@ -185,7 +201,6 @@ export default function Products() {
     }
   };
 
-  // 🚀 ৫. সেভ বা আপডেট করার API
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -198,6 +213,18 @@ export default function Products() {
     const origPrice = Number(formData.price) || 0;
     const discPercent = Number(formData.discount) || 0;
 
+    // 🚀 ফর্মে থাকা ডাইনামিক বক্সগুলোকে সাজানো
+    const formattedVariants = formData.variants
+      .filter(v => v.name.trim() !== '' && v.options.trim() !== '')
+      .map(v => ({
+        name: v.name.trim(),
+        options: v.options.split(',').map(opt => opt.trim()).filter(Boolean)
+      }));
+
+    // ব্যাকএন্ডের পুরানো মডেলের সাপোর্টের জন্য কালার এবং সাইজ আলাদা করা
+    const colorVar = formattedVariants.find(v => v.name.toLowerCase() === 'color' || v.name.toLowerCase() === 'colors');
+    const sizeVar = formattedVariants.find(v => v.name.toLowerCase() === 'size' || v.name.toLowerCase() === 'sizes');
+
     const productPayload = {
       name: formData.name.trim(),
       description: formData.description?.trim() || 'Premium quality product.',
@@ -207,7 +234,10 @@ export default function Products() {
       status: Number(formData.stock) <= 0 ? 'Out of Stock' : (formData.status || 'Active'),
       category: formData.category || (categories.length > 0 ? categories[0].name : "Men's Collection"),
       images: validImages.length > 0 ? validImages : ['https://via.placeholder.com/600x600?text=No+Image'],
-      imageUrl: validImages.length > 0 ? validImages[0] : ''
+      imageUrl: validImages.length > 0 ? validImages[0] : '',
+      variants: formattedVariants, // 🚀 ডাইনামিক ভ্যারিয়েন্টগুলো সেভ করা হচ্ছে
+      colors: colorVar ? colorVar.options : [], // ব্যাকএন্ড সাপোর্টের জন্য
+      sizes: sizeVar ? sizeVar.options : []     // ব্যাকএন্ড সাপোর্টের জন্য
     };
 
     const targetId = formData._id || formData.id || Date.now().toString();
@@ -279,7 +309,7 @@ export default function Products() {
               <Box size={14} className="mr-1" /> Total: {products.length} Products
             </span>
           </div>
-          <p className="text-sm text-gray-400 mt-1">Manage live database inventory, discounts, and stock levels</p>
+          <p className="text-sm text-gray-400 mt-1">Manage live database inventory, discounts, dynamic variants, and stock</p>
         </div>
         <button onClick={handleOpenAdd} className="bg-[#D4AF37] text-black px-5 py-2.5 rounded-lg hover:bg-white font-bold flex items-center space-x-2 shadow-lg">
           <Plus size={20} /> <span>Add New Product</span>
@@ -310,8 +340,8 @@ export default function Products() {
                   <th className="px-6 py-4">Product Info</th>
                   <th className="px-6 py-4">Category</th>
                   <th className="px-6 py-4">Price & Discount</th>
+                  <th className="px-6 py-4">Variants</th>
                   <th className="px-6 py-4">Stock</th>
-                  <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -319,7 +349,6 @@ export default function Products() {
                 {filteredProducts.map((p: any) => {
                   const origPrice = Number(p.price) || 0;
                   const discPercent = Number(p.discount) || 0;
-                  const calcSalePrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
                   const stockVal = Number(p.stock) || 0;
 
                   let statusColor = 'text-green-400 bg-green-500/10 border-green-500/20';
@@ -334,6 +363,9 @@ export default function Products() {
                   }
 
                   const displayImage = p.images && p.images.length > 0 ? p.images[0] : (p.imageUrl || '');
+                  
+                  // 🚀 টেবিলে ডাইনামিক ভ্যারিয়েন্ট অপশন কাউন্ট দেখানো হচ্ছে
+                  const variantCount = p.variants ? p.variants.length : ((p.colors?.length > 0 ? 1 : 0) + (p.sizes?.length > 0 ? 1 : 0));
 
                   return (
                     <tr key={p._id || p.id || Math.random()} className="hover:bg-[#111111]/50 transition-colors">
@@ -364,15 +396,20 @@ export default function Products() {
                       </td>
 
                       <td className="px-6 py-4">
-                        <span className={`font-medium ${stockVal > 10 ? 'text-white' : stockVal > 0 ? 'text-yellow-400' : 'text-red-400'}`}>
-                          {stockVal} in stock
-                        </span>
+                        <div className="text-xs text-gray-400">
+                          <span className="bg-gray-800 text-white px-2 py-1 rounded">{variantCount} Option(s)</span>
+                        </div>
                       </td>
 
                       <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold border inline-block ${statusColor}`}>
-                          {displayStatus}
-                        </span>
+                        <div className="flex flex-col space-y-1">
+                          <span className={`font-medium ${stockVal > 10 ? 'text-white' : stockVal > 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                            {stockVal} in stock
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border w-max ${statusColor}`}>
+                            {displayStatus}
+                          </span>
+                        </div>
                       </td>
 
                       <td className="px-6 py-4 text-right">
@@ -429,7 +466,7 @@ export default function Products() {
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                   className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors"
-                  placeholder="e.g. Premium Gold T-Shirt"
+                  placeholder="e.g. Premium Gold Watch"
                 />
               </div>
 
@@ -437,12 +474,65 @@ export default function Products() {
                 <label className="block text-gray-300 text-sm mb-2 font-medium">Product Description</label>
                 <textarea 
                   required
-                  rows={4}
+                  rows={3}
                   value={formData.description}
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
                   className="w-full bg-[#111111] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#D4AF37] transition-colors resize-none"
                   placeholder="Enter detailed product description..."
                 ></textarea>
+              </div>
+
+              {/* 🚀 Dynamic Options/Variants Section */}
+              <div className="bg-[#111111] border border-gray-800 rounded-xl p-5 space-y-4">
+                <div className="flex justify-between items-center border-b border-gray-800 pb-3">
+                  <h3 className="text-[#D4AF37] font-bold text-sm uppercase tracking-wider flex items-center">
+                    <ListPlus size={18} className="mr-2" /> Custom Options (Colors, Sizes, Materials, etc.)
+                  </h3>
+                  <button 
+                    type="button" 
+                    onClick={addVariantField}
+                    className="text-xs bg-[#D4AF37]/10 text-[#D4AF37] px-3 py-1.5 rounded border border-[#D4AF37]/30 hover:bg-[#D4AF37] hover:text-black font-bold transition-colors"
+                  >
+                    + Add New Option Box
+                  </button>
+                </div>
+                
+                {formData.variants.length === 0 ? (
+                  <p className="text-gray-500 text-xs italic text-center py-2">No custom options added. Leave empty if this product has no variants.</p>
+                ) : (
+                  formData.variants.map((variant, index) => (
+                    <div key={index} className="flex flex-col sm:flex-row gap-3 bg-[#1A1A1A] p-3 rounded-lg border border-gray-700 relative group">
+                      <div className="w-full sm:w-1/3">
+                        <label className="block text-gray-400 text-xs mb-1 uppercase font-bold">Option Name</label>
+                        <input 
+                          type="text" 
+                          value={variant.name}
+                          onChange={(e) => handleVariantChange(index, 'name', e.target.value)}
+                          className="w-full bg-[#111111] border border-gray-600 rounded px-3 py-2 text-white focus:border-[#D4AF37] focus:outline-none text-sm"
+                          placeholder="e.g. Color or Size"
+                        />
+                      </div>
+                      <div className="w-full sm:w-2/3">
+                        <label className="block text-gray-400 text-xs mb-1 uppercase font-bold">Options (Comma separated)</label>
+                        <input 
+                          type="text" 
+                          value={variant.options}
+                          onChange={(e) => handleVariantChange(index, 'options', e.target.value)}
+                          className="w-full bg-[#111111] border border-gray-600 rounded px-3 py-2 text-white focus:border-[#D4AF37] focus:outline-none text-sm"
+                          placeholder="e.g. Red, Blue, Yellow"
+                        />
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => removeVariantField(index)}
+                        className="absolute top-2 right-2 text-gray-500 hover:text-red-500 bg-[#111111] p-1 rounded-full opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove Option Box"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
