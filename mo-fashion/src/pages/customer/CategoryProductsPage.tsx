@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ChevronLeft, ShoppingBag, Search, Tag, Image as ImageIcon } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ChevronLeft, ShoppingBag, Search, Tag, Image as ImageIcon, Star } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -8,6 +8,7 @@ import { useCartStore } from '../../store/useCartStore';
 
 export default function CategoryProductsPage() {
   const { id } = useParams(); 
+  const navigate = useNavigate();
   const { settings } = useSettingsStore();
   const safeSettings = settings as any;
   const addToCart = useCartStore((state) => state.addToCart);
@@ -169,6 +170,9 @@ export default function CategoryProductsPage() {
                 const discount = Number(product.discount) || 0;
                 const sellingPrice = discount > 0 ? originalPrice - (originalPrice * discount / 100) : originalPrice;
                 const stockVal = Number(product.stock) || 0;
+                
+                // ডামি সোল্ড কাউন্ট (দারাজের মতো)
+                const dummySoldCount = product.sold || Math.floor((product.reviews || 24) * 3.5);
 
                 // ইমেজের অ্যারে তৈরি
                 const productImages = (product.images && product.images.length > 0 && !product.images[0].includes('No+Image')) 
@@ -179,7 +183,7 @@ export default function CategoryProductsPage() {
                   <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-xl p-4 text-center hover:border-[#D4AF37]/60 transition-all duration-300 group flex flex-col shadow-lg relative">
                     
                     {/* 🚀 Image Box with Auto-Slider */}
-                    <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-lg mb-5 bg-[#111111] aspect-[4/5]">
+                    <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-lg mb-4 bg-[#111111] aspect-[4/5]">
                       {productImages.length > 0 ? (
                         productImages.map((img: string, idx: number) => (
                           <img 
@@ -216,15 +220,31 @@ export default function CategoryProductsPage() {
                     
                     {/* Product Title */}
                     <Link to={`/product/${product._id || product.id}`} className="mt-auto">
-                      <h3 className="font-bold text-white mb-2 hover:text-[#D4AF37] transition-colors line-clamp-2 cursor-pointer">
+                      <h3 className="font-bold text-white mb-1 hover:text-[#D4AF37] transition-colors line-clamp-2 cursor-pointer text-sm">
                         {product.name}
                       </h3>
                     </Link>
 
-                    {/* Remaining Stock Text */}
-                    <p className="text-[11px] text-gray-400 mb-3">
-                      {stockVal > 0 ? `${stockVal} items remaining in stock` : <span className="text-red-400 font-bold">Currently unavailable</span>}
-                    </p>
+                    {/* 🚀 Rating & Sold Count (Daraz Style) */}
+                    <div className="flex items-center justify-center space-x-2 mt-1 mb-2 text-xs">
+                      <div className="flex items-center text-[#D4AF37]">
+                        <Star size={12} fill="currentColor" className="mr-1" />
+                        <span>{product.rating || "5.0"}</span>
+                      </div>
+                      <span className="text-gray-600">|</span>
+                      <span className="text-gray-400">{dummySoldCount} Sold</span>
+                    </div>
+
+                    {/* 🚀 Stylish Remaining Stock Box */}
+                    <div className="bg-[#111111] border border-gray-800 rounded px-2 py-1.5 mb-3 mx-auto w-max">
+                      <p className="text-[11px] text-gray-400">
+                        {stockVal > 0 ? (
+                          <><span className="text-white font-bold">{stockVal}</span> items remaining in stock</>
+                        ) : (
+                          <span className="text-red-400 font-bold">Currently unavailable</span>
+                        )}
+                      </p>
+                    </div>
                     
                     {/* Price Section */}
                     <div className="mb-5 flex items-center justify-center space-x-2">
@@ -238,13 +258,13 @@ export default function CategoryProductsPage() {
                     <button 
                       onClick={(e) => handleAddToCart(product, e)}
                       disabled={stockVal <= 0 || product.status === 'Out of Stock'}
-                      className={`w-full flex items-center justify-center space-x-2 border py-3 rounded-lg font-bold uppercase tracking-wider text-sm transition-all duration-300 ${
+                      className={`w-full flex items-center justify-center space-x-2 border py-3 rounded-lg font-bold uppercase tracking-wider text-xs transition-all duration-300 ${
                         stockVal <= 0 || product.status === 'Out of Stock'
                         ? 'bg-[#111111] text-gray-500 border-gray-700 cursor-not-allowed' 
                         : 'border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black shadow-[0_0_10px_rgba(212,175,55,0.1)]'
                       }`}
                     >
-                      <ShoppingBag size={18} />
+                      <ShoppingBag size={16} />
                       <span>{stockVal <= 0 || product.status === 'Out of Stock' ? 'OUT OF STOCK' : 'ADD TO CART'}</span>
                     </button>
                   </div>
