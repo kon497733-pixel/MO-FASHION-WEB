@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
   ShoppingBag, Star, Truck, ShieldCheck, ChevronLeft, Minus, Plus, 
   MapPin, Banknote, RotateCcw, Share2, Heart, 
-  X, ZoomIn, ZoomOut, Maximize2
+  X, ZoomIn, ZoomOut, Maximize2, Tag
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCartStore } from '../../store/useCartStore';
@@ -18,12 +18,10 @@ export default function ProductDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   
-  // 🚀 ডাইনামিক ভ্যারিয়েন্ট (Custom Options) সেভ রাখার স্টেট
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   
   const [mainImage, setMainImage] = useState('');
 
-  // লাইভ ক্লাউড সেটিং ডাটা
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
     currency: '৳',
@@ -31,7 +29,6 @@ export default function ProductDetailsPage() {
     shippingOutside: 150
   });
 
-  // লাইটবক্স ও জুমের স্টেট
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
@@ -47,7 +44,6 @@ export default function ProductDetailsPage() {
         return;
       }
 
-      // ১. প্রথমে লোকাল স্টোরেজ থেকে চেক
       const localProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
       let foundProduct = localProducts.find((p: any) => String(p._id || p.id) === String(id));
 
@@ -59,24 +55,24 @@ export default function ProductDetailsPage() {
       const initializeProduct = (prodData: any) => {
         setProduct(prodData);
         
-        // 🚀 অ্যাডমিন প্যানেল থেকে আসা কাস্টম অপশনগুলো (Variants) সেট করা
         const initialVariants: Record<string, string> = {};
         
         if (prodData.variants && prodData.variants.length > 0) {
           prodData.variants.forEach((v: any) => {
             if (v.options && v.options.length > 0) {
-              initialVariants[v.name] = v.options[0]; // ডিফল্টভাবে প্রথম অপশনটি সিলেক্ট থাকবে
+              initialVariants[v.name] = v.options[0]; 
             }
           });
         } else {
-          // পুরোনো প্রোডাক্টের ব্যাকওয়ার্ড সাপোর্ট (যাতে এরর না দেয়)
           if (prodData.colors && prodData.colors.length > 0) initialVariants['Color'] = prodData.colors[0];
           if (prodData.sizes && prodData.sizes.length > 0) initialVariants['Size'] = prodData.sizes[0];
         }
         
         setSelectedVariants(initialVariants);
 
-        const img = (prodData.images && prodData.images[0]) || prodData.imageUrl || '';
+        const img = (prodData.images && prodData.images[0] && !prodData.images[0].includes('No+Image')) 
+          ? prodData.images[0] 
+          : (prodData.imageUrl || '');
         setMainImage(img);
       };
 
@@ -84,7 +80,6 @@ export default function ProductDetailsPage() {
         initializeProduct(foundProduct);
       }
 
-      // ২. ক্লাউড ডাটাবেস (Backend) থেকে রিয়েল-টাইম ফেচ
       try {
         const [prodRes, settingsRes] = await Promise.all([
           fetch(`http://localhost:5000/api/products/${id}`).catch(() => null),
@@ -115,7 +110,6 @@ export default function ProductDetailsPage() {
   const decreaseQuantity = () => setQuantity(prev => (prev > 1 ? prev - 1 : 1));
   const increaseQuantity = () => setQuantity(prev => (prev < (product?.stock || 10) ? prev + 1 : prev));
 
-  // 🚀 অপশন চেঞ্জ করার ফাংশন
   const handleSelectVariant = (name: string, value: string) => {
     setSelectedVariants(prev => ({ ...prev, [name]: value }));
   };
@@ -130,7 +124,6 @@ export default function ProductDetailsPage() {
     const discountPercent = Number(product.discount) || 0;
     const sellingPrice = discountPercent > 0 ? originalPrice - (originalPrice * discountPercent / 100) : originalPrice;
 
-    // 🚀 কার্টের জন্য ডাইনামিক ডাটা ফরম্যাট করা
     let cartColor = 'N/A';
     let cartSizeArray: string[] = [];
 
@@ -140,7 +133,6 @@ export default function ProductDetailsPage() {
         if (key.toLowerCase().includes('color')) {
           cartColor = selectedVariants[key];
         } else {
-          // Color ছাড়া বাকি সব অপশন (Size, Material etc.) কার্টে একসাথে দেখাবে
           cartSizeArray.push(`${key}: ${selectedVariants[key]}`);
         }
       });
@@ -172,7 +164,6 @@ export default function ProductDetailsPage() {
     navigate('/cart');
   };
 
-  // জুম ও ড্র্যাগ হ্যান্ডলারস
   const handleZoomIn = () => setZoomLevel(prev => Math.min(prev + 0.5, 4)); 
   const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.5, 1)); 
   
@@ -227,7 +218,6 @@ export default function ProductDetailsPage() {
     );
   }
 
-  // 🚀 ডাইনামিক অপশনগুলো প্রসেস করা
   let displayVariants = product.variants || [];
   if (displayVariants.length === 0) {
     if (product.colors && product.colors.length > 0) displayVariants.push({ name: 'Color', options: product.colors });
@@ -242,7 +232,11 @@ export default function ProductDetailsPage() {
   const discountPercent = Number(product.discount) || 0;
   const currentPrice = discountPercent > 0 ? originalPrice - (originalPrice * discountPercent / 100) : originalPrice;
   const stockVal = Number(product.stock) || 0;
-  const dummySoldCount = product.sold || Math.floor((product.reviews || 24) * 3.5); // ডামি সোল্ড কাউন্ট
+  
+  // 🚀 ডাটাবেসের অরিজিনাল রিয়েল ডাটা (কোনো ফেইক ডামি ভ্যালু নেই)
+  const realSoldCount = product.sold || 0;
+  const realReviewCount = product.reviews || 0;
+  const realRatingValue = product.rating || 0;
 
   return (
     <main className="min-h-screen py-8 bg-[#111111] text-white">
@@ -280,6 +274,7 @@ export default function ProductDetailsPage() {
               )}
             </div>
             
+            {/* Thumbnails */}
             {galleryImages.length > 1 && (
               <div className="flex space-x-3 overflow-x-auto custom-scrollbar pb-2">
                 {galleryImages.map((img: string, idx: number) => (
@@ -311,16 +306,17 @@ export default function ProductDetailsPage() {
 
             <div className="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-800 flex-wrap gap-y-2">
               <div className="flex text-[#D4AF37]">
+                {/* 🚀 রিয়েল রেটিং অনুযায়ী স্টার শো করবে */}
                 {[...Array(5)].map((_, i) => (
-                  <Star key={i} size={16} fill={i < 4 ? "currentColor" : "none"} />
+                  <Star key={i} size={16} fill={i < Math.round(realRatingValue) ? "currentColor" : "none"} />
                 ))}
               </div>
+              {/* 🚀 রিয়েল রিভিউ ও সোল্ড ডাটা */}
               <span className="text-blue-400 text-sm hover:underline cursor-pointer">
-                {product.reviews || 24} Ratings
+                {realReviewCount} Ratings
               </span>
               <span className="text-gray-500">|</span>
-              {/* 🚀 Sold Count (Daraz Style) */}
-              <span className="text-gray-400 text-sm">{dummySoldCount} Sold</span>
+              <span className="text-gray-400 text-sm">{realSoldCount} Sold</span>
               <span className="text-gray-500">|</span>
               <span className="text-gray-400 text-sm">Brand: <span className="text-blue-400 hover:underline cursor-pointer">MO Premium</span></span>
             </div>
@@ -332,7 +328,7 @@ export default function ProductDetailsPage() {
               )}
             </div>
 
-            {/* 🚀 Stylish Stock Status */}
+            {/* Stylish Stock Status */}
             <div className="mb-6">
               {stockVal > 10 ? (
                 <span className="inline-block bg-green-500/10 text-green-500 px-3 py-1 rounded text-xs font-bold border border-green-500/20 tracking-wider">
@@ -343,7 +339,6 @@ export default function ProductDetailsPage() {
                   <span className="inline-block bg-yellow-500/10 text-yellow-500 px-3 py-1 rounded text-xs font-bold border border-yellow-500/20 tracking-wider w-max mb-1">
                     LOW STOCK
                   </span>
-                  {/* 🚀 Remaining items highlight */}
                   <span className="text-[#D4AF37] text-xs font-bold">Only {stockVal} items left!</span>
                 </div>
               ) : (
@@ -353,7 +348,7 @@ export default function ProductDetailsPage() {
               )}
             </div>
 
-            {/* 🚀 Dynamic Variants Render (Color, Size, Material, etc.) */}
+            {/* Dynamic Variants Render (Color, Size, Material, etc.) */}
             {displayVariants.map((variant: any, index: number) => (
               <div key={index} className="mb-6">
                 <h3 className="text-gray-400 mb-2 text-sm">
