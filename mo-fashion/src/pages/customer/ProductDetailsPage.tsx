@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
   ShoppingBag, Star, Truck, ShieldCheck, ChevronLeft, Minus, Plus, 
   MapPin, Banknote, RotateCcw, Share2, Heart, 
-  X, ZoomIn, ZoomOut, Maximize2, Tag
+  X, ZoomIn, ZoomOut, Maximize2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCartStore } from '../../store/useCartStore';
@@ -17,12 +17,13 @@ export default function ProductDetailsPage() {
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
-  const [selectedSize, setSelectedSize] = useState('M');
-  const [selectedColor, setSelectedColor] = useState('Black');
+  
+  // 🚀 ডাইনামিক ভ্যারিয়েন্ট (Custom Options) সেভ রাখার স্টেট
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   
   const [mainImage, setMainImage] = useState('');
 
-  // 🚀 লাইভ ক্লাউড সেটিং ডাটা (শিপিং ও কারেন্সি)
+  // লাইভ ক্লাউড সেটিং ডাটা
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
     currency: '৳',
@@ -30,14 +31,13 @@ export default function ProductDetailsPage() {
     shippingOutside: 150
   });
 
-  // 🚀 লাইটবক্স ও জুমের স্টেট (আপনার অরিজিনাল ফিচার)
+  // লাইটবক্স ও জুমের স্টেট
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  // 🚀 ১. ক্লাউড ডাটাবেজ (MongoDB API) থেকে প্রোডাক্ট ও সেটিং লোড করা
   useEffect(() => {
     const loadProductDetails = async () => {
       setLoading(true);
@@ -47,24 +47,45 @@ export default function ProductDetailsPage() {
         return;
       }
 
-      // ১. প্রথমে লোকাল স্টোরেজ থেকে ইনস্ট্যান্ট চেক
+      // ১. প্রথমে লোকাল স্টোরেজ থেকে চেক
       const localProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
-      let foundProduct = localProducts.find((p: any) => 
-        String(p._id || p.id) === String(id)
-      );
+      let foundProduct = localProducts.find((p: any) => String(p._id || p.id) === String(id));
 
       const savedSettings = localStorage.getItem('mo_fashion_settings');
       if (savedSettings) {
         try { setSiteSettings(JSON.parse(savedSettings)); } catch(e){}
       }
 
-      if (foundProduct) {
-        setProduct(foundProduct);
-        const img = (foundProduct.images && foundProduct.images[0]) || foundProduct.imageUrl || '';
+      const initializeProduct = (prodData: any) => {
+        setProduct(prodData);
+        
+        // 🚀 অ্যাডমিন প্যানেল থেকে আসা কাস্টম অপশনগুলো সেট করা
+        const initialVariants: Record<string, string> = {};
+        
+        // নতুন ডাইনামিক ভ্যারিয়েন্ট থাকলে
+        if (prodData.variants && prodData.variants.length > 0) {
+          prodData.variants.forEach((v: any) => {
+            if (v.options && v.options.length > 0) {
+              initialVariants[v.name] = v.options[0]; // ডিফল্টভাবে প্রথম অপশনটি সিলেক্ট থাকবে
+            }
+          });
+        } else {
+          // পুরোনো প্রোডাক্টের ব্যাকওয়ার্ড সাপোর্ট (যাতে এরর না দেয়)
+          if (prodData.colors && prodData.colors.length > 0) initialVariants['Color'] = prodData.colors[0];
+          if (prodData.sizes && prodData.sizes.length > 0) initialVariants['Size'] = prodData.sizes[0];
+        }
+        
+        setSelectedVariants(initialVariants);
+
+        const img = (prodData.images && prodData.images[0]) || prodData.imageUrl || '';
         setMainImage(img);
+      };
+
+      if (foundProduct) {
+        initializeProduct(foundProduct);
       }
 
-      // ২. ক্লাউড ডাটাবেস (MongoDB Backend) থেকে রিয়েল-টাইম ফেচ
+      // ২. ক্লাউড ডাটাবেস (Backend) থেকে রিয়েল-টাইম ফেচ
       try {
         const [prodRes, settingsRes] = await Promise.all([
           fetch(`http://localhost:5000/api/products/${id}`).catch(() => null),
@@ -74,12 +95,7 @@ export default function ProductDetailsPage() {
         if (prodRes && prodRes.ok) {
           const cloudProduct = await prodRes.json();
           if (cloudProduct && !cloudProduct.message) {
-            setProduct(cloudProduct);
-            if (cloudProduct.sizes && cloudProduct.sizes.length > 0) setSelectedSize(cloudProduct.sizes[0]);
-            if (cloudProduct.colors && cloudProduct.colors.length > 0) setSelectedColor(cloudProduct.colors[0]);
-
-            const img = (cloudProduct.images && cloudProduct.images[0]) || cloudProduct.imageUrl || '';
-            setMainImage(img);
+            initializeProduct(cloudProduct);
           }
         }
 
@@ -100,6 +116,11 @@ export default function ProductDetailsPage() {
   const decreaseQuantity = () => setQuantity(prev => (prev > 1 ? prev - 1 : 1));
   const increaseQuantity = () => setQuantity(prev => (prev < (product?.stock || 10) ? prev + 1 : prev));
 
+  // 🚀 অপশন চেঞ্জ করার ফাংশন
+  const handleSelectVariant = (name: string, value: string) => {
+    setSelectedVariants(prev => ({ ...prev, [name]: value }));
+  };
+
   const handleAddToCart = () => {
     if (!product || product.stock === 0 || product.status === 'Out of Stock') {
       toast.error('This product is currently out of stock!');
@@ -110,13 +131,30 @@ export default function ProductDetailsPage() {
     const discountPercent = Number(product.discount) || 0;
     const sellingPrice = discountPercent > 0 ? originalPrice - (originalPrice * discountPercent / 100) : originalPrice;
 
+    // 🚀 কার্টের জন্য ডাটা ফরম্যাট করা
+    let cartColor = 'N/A';
+    let cartSize = 'N/A';
+
+    const variantKeys = Object.keys(selectedVariants);
+    if (variantKeys.length > 0) {
+      // Color বা color নাম থাকলে সেটাকে কালারে নেবে
+      const colorKey = variantKeys.find(k => k.toLowerCase().includes('color'));
+      if (colorKey) cartColor = selectedVariants[colorKey];
+      
+      // বাকি সব অপশন (Size, Material etc) একসাথে সাইজ ফিল্ডে ঢুকবে (কার্টে দেখানোর জন্য)
+      const otherKeys = variantKeys.filter(k => !k.toLowerCase().includes('color'));
+      if (otherKeys.length > 0) {
+        cartSize = otherKeys.map(k => selectedVariants[k]).join(', ');
+      }
+    }
+
     const cartItem = {
       id: String(product._id || product.id),
       name: String(product.name),
       price: Number(sellingPrice.toFixed(2)),
       quantity: quantity,
-      size: selectedSize,
-      color: selectedColor,
+      size: cartSize,
+      color: cartColor,
       image: mainImage || product.imageUrl || (product.images && product.images[0]) || '',
       stock: Number(product.stock) || 0
     };
@@ -134,7 +172,7 @@ export default function ProductDetailsPage() {
     navigate('/cart');
   };
 
-  // 🚀 জুম ও ড্র্যাগ হ্যান্ডলারস (আপনার অরিজিনাল লজিক)
+  // জুম ও ড্র্যাগ হ্যান্ডলারস
   const handleZoomIn = () => setZoomLevel(prev => Math.min(prev + 0.5, 4)); 
   const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.5, 1)); 
   
@@ -189,8 +227,12 @@ export default function ProductDetailsPage() {
     );
   }
 
-  const displaySizes = product.sizes && product.sizes.length > 0 ? product.sizes : ['S', 'M', 'L', 'XL'];
-  const displayColors = product.colors && product.colors.length > 0 ? product.colors : ['Black', 'Gold', 'White'];
+  // 🚀 ডাইনামিক অপশনগুলো প্রসেস করা
+  let displayVariants = product.variants || [];
+  if (displayVariants.length === 0) {
+    if (product.colors && product.colors.length > 0) displayVariants.push({ name: 'Color', options: product.colors });
+    if (product.sizes && product.sizes.length > 0) displayVariants.push({ name: 'Size', options: product.sizes });
+  }
   
   const galleryImages = product.images && product.images.length > 0 && !product.images[0].includes('No+Image') 
     ? product.images 
@@ -287,45 +329,29 @@ export default function ProductDetailsPage() {
               )}
             </div>
 
-            {/* Color Selector */}
-            <div className="mb-6">
-              <h3 className="text-gray-400 mb-2 text-sm">Color Family: <span className="text-white font-bold ml-1">{selectedColor}</span></h3>
-              <div className="flex flex-wrap gap-3">
-                {displayColors.map((color: string) => (
-                  <button
-                    key={color}
-                    onClick={() => setSelectedColor(color)}
-                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all border ${
-                      selectedColor === color 
-                        ? 'bg-[#D4AF37]/10 border-[#D4AF37] text-[#D4AF37]' 
-                        : 'border-gray-700 text-gray-300 hover:border-[#D4AF37]'
-                    }`}
-                  >
-                    {color}
-                  </button>
-                ))}
+            {/* 🚀 Dynamic Variants Render (Color, Size, Material, etc.) */}
+            {displayVariants.map((variant: any, index: number) => (
+              <div key={index} className="mb-6">
+                <h3 className="text-gray-400 mb-2 text-sm">
+                  {variant.name}: <span className="text-white font-bold ml-1">{selectedVariants[variant.name]}</span>
+                </h3>
+                <div className="flex flex-wrap gap-3">
+                  {variant.options.map((opt: string) => (
+                    <button
+                      key={opt}
+                      onClick={() => handleSelectVariant(variant.name, opt)}
+                      className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all border ${
+                        selectedVariants[variant.name] === opt 
+                          ? 'bg-[#D4AF37]/10 border-[#D4AF37] text-[#D4AF37]' 
+                          : 'border-gray-700 text-gray-300 hover:border-[#D4AF37]'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            {/* Size Selector */}
-            <div className="mb-6">
-              <h3 className="text-gray-400 mb-2 text-sm">Size: <span className="text-white font-bold ml-1">{selectedSize}</span></h3>
-              <div className="flex flex-wrap gap-3">
-                {displaySizes.map((size: string) => (
-                  <button
-                    key={size}
-                    onClick={() => setSelectedSize(size)}
-                    className={`min-w-[40px] h-10 px-2 rounded-md font-medium transition-all flex items-center justify-center border ${
-                      selectedSize === size 
-                        ? 'bg-[#D4AF37] text-black border-[#D4AF37]' 
-                        : 'border-gray-700 text-gray-300 hover:border-[#D4AF37] hover:text-[#D4AF37]'
-                    }`}
-                  >
-                    {size}
-                  </button>
-                ))}
-              </div>
-            </div>
+            ))}
 
             {/* Quantity */}
             <div className="mb-8 flex items-center space-x-4">
@@ -356,7 +382,7 @@ export default function ProductDetailsPage() {
             </div>
           </div>
 
-          {/* Column 3: Shipping (Cloud Settings Synced) */}
+          {/* Column 3: Shipping */}
           <div className="lg:col-span-3">
             <div className="bg-[#1A1A1A] rounded-xl border border-gray-800 p-5 space-y-6 sticky top-24">
               <div>
