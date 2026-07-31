@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Image as ImageIcon, ArrowRight, Search, Tag, RefreshCw } from 'lucide-react';
+import { ShoppingBag, Image as ImageIcon, Search, Tag, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCartStore } from '../../store/useCartStore';
 
@@ -17,14 +17,14 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 🚀 লাইভ ক্লাউড সেটিংস স্টেট (স্টোর নাম, ট্যাগলাইন, কারেন্সি)
+  // 🚀 লাইভ ক্লাউড সেটিংস স্টেট
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
     tagline: 'Premium E-Commerce Experience',
     currency: '৳'
   });
 
-  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে অটো-স্লাইড হওয়ার জন্য স্টেট (আপনার অরিজিনাল লজিক)
+  // 🚀 ছবিগুলো প্রতি ২ সেকেন্ডে অটো-স্লাইড হওয়ার জন্য স্টেট
   const [imageIndex, setImageIndex] = useState(0);
 
   useEffect(() => {
@@ -34,28 +34,28 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 ১. সরাসরি ক্লাউড ডাটাবেস (MongoDB API) থেকে প্রোডাক্ট ও সেটিংস ফেচ করা
-  const fetchLiveHomeData = async () => {
-    // ১. লোকাল স্টোরেজ থেকে ইনস্ট্যান্ট লোড (জিরো ডিলে)
-    const savedProducts = localStorage.getItem('mo_fashion_products');
-    if (savedProducts) {
-      try {
-        const parsed = JSON.parse(savedProducts);
-        setAllProducts(parsed);
-        setDisplayProducts(parsed);
-      } catch (e) {}
+  // 🚀 ১. সরাসরি ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম প্রোডাক্ট ও সেটিংস ফেচ করা
+  const fetchLiveHomeData = async (isSilent = false) => {
+    if (!isSilent) {
+      const savedProducts = localStorage.getItem('mo_fashion_products');
+      if (savedProducts) {
+        try {
+          const parsed = JSON.parse(savedProducts);
+          setAllProducts(parsed);
+          setDisplayProducts(parsed);
+        } catch (e) {}
+      }
+
+      const savedSettings = localStorage.getItem('mo_fashion_settings');
+      if (savedSettings) {
+        try {
+          setSiteSettings(JSON.parse(savedSettings));
+        } catch (e) {}
+      }
     }
 
-    const savedSettings = localStorage.getItem('mo_fashion_settings');
-    if (savedSettings) {
-      try {
-        setSiteSettings(JSON.parse(savedSettings));
-      } catch (e) {}
-    }
-
-    // ২. ক্লাউড ডাটাবেস থেকে রিয়েল-টাইম ডাটা সিঙ্ক
     try {
-      setLoading(true);
+      if (!isSilent) setLoading(true);
       const [prodRes, settingsRes] = await Promise.all([
         fetch(API_URL).catch(() => null),
         fetch(SETTINGS_API_URL).catch(() => null)
@@ -80,12 +80,19 @@ export default function Home() {
     } catch (error) {
       console.warn("Backend API offline, using cached home data.");
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchLiveHomeData();
+
+    // 🚀 অন্যান্য ডিভাইস থেকে স্টক/সোল্ড চেঞ্জ হলে রিয়েল-টাইমে পেজ আপডেট করতে Polling (প্রতি ৪ সেকেন্ড পর পর)
+    const pollInterval = setInterval(() => {
+      fetchLiveHomeData(true);
+    }, 4000);
+
+    return () => clearInterval(pollInterval);
   }, []);
 
   // সার্চ ফিল্টার লজিক
@@ -207,6 +214,7 @@ export default function Home() {
               const discPercent = Number(product.discount) || 0;
               const sellingPrice = discPercent > 0 ? origPrice - (origPrice * discPercent / 100) : origPrice;
               const stockVal = Number(product.stock) || 0;
+              const soldVal = Number(product.sold) || 0;
               
               const productImages = (product.images && product.images.length > 0 && !product.images[0].includes('No+Image')) 
                 ? product.images 
@@ -237,19 +245,27 @@ export default function Home() {
 
                     {/* Discount Badge */}
                     {discPercent > 0 && (
-                      <div className="absolute top-3 left-3 bg-gradient-to-r from-orange-500 to-red-600 text-white text-xs font-extrabold px-3 py-1.5 rounded shadow-lg z-10 flex items-center">
+                      <div className="absolute top-3 left-3 bg-gradient-to-r from-orange-500 to-red-600 text-white text-xs font-extrabold px-3 py-1.5 rounded-md shadow-lg z-10 flex items-center">
                         <Tag size={12} className="mr-1" />
                         -{discPercent}% OFF
                       </div>
                     )}
 
-                    {/* Stock Badges */}
-                    {product.status === 'Out of Stock' || stockVal === 0 ? (
-                      <span className="absolute top-3 right-3 bg-red-500/90 text-white text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">Sold Out</span>
-                    ) : stockVal <= 5 ? (
-                      <span className="absolute top-3 right-3 bg-yellow-500/90 text-black text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">Few Left ({stockVal})</span>
+                    {/* Dynamic Stylish Top-Right Stock Badge */}
+                    {stockVal <= 0 || product.status === 'Out of Stock' ? (
+                      <span className="absolute top-3 right-3 bg-rose-950/90 text-rose-400 border border-rose-500/40 text-[10px] font-bold px-2.5 py-1 rounded-md backdrop-blur-md z-10 uppercase tracking-wider shadow-lg">
+                        SOLD OUT
+                      </span>
+                    ) : stockVal <= 10 ? (
+                      <span className="absolute top-3 right-3 bg-amber-950/90 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2.5 py-1 rounded-md backdrop-blur-md z-10 uppercase tracking-wider shadow-lg flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                        LOW STOCK
+                      </span>
                     ) : (
-                      <span className="absolute top-3 right-3 bg-green-600/80 text-white text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm z-10 uppercase tracking-wider">In Stock</span>
+                      <span className="absolute top-3 right-3 bg-emerald-950/90 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2.5 py-1 rounded-md backdrop-blur-md z-10 uppercase tracking-wider shadow-lg flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        IN STOCK
+                      </span>
                     )}
                   </Link>
                   
@@ -260,10 +276,26 @@ export default function Home() {
                     </h3>
                   </Link>
 
-                  {/* Stock Status */}
-                  <p className="text-[11px] text-gray-400 mb-3">
-                    {stockVal > 0 ? `${stockVal} items remaining in stock` : <span className="text-red-400 font-bold">Currently unavailable</span>}
-                  </p>
+                  {/* Rating & Real Sold Count */}
+                  <div className="flex items-center justify-center space-x-2 text-xs mb-2">
+                    <span className="text-[#D4AF37] font-bold">★ {Number(product.rating || 5).toFixed(1)}</span>
+                    <span className="text-gray-600">|</span>
+                    <span className="text-gray-300 font-medium">{soldVal} Sold</span>
+                  </div>
+
+                  {/* Highlighted Remaining Stock Box */}
+                  <div className="bg-[#111111] border border-[#D4AF37]/30 rounded-lg px-3 py-1.5 mb-3 mx-auto w-max shadow-inner">
+                    <p className="text-[11px] text-gray-300 font-medium">
+                      {stockVal > 0 ? (
+                        <>
+                          <span className="text-[#D4AF37] font-black text-sm mr-1">{stockVal}</span> 
+                          items remaining in stock
+                        </>
+                      ) : (
+                        <span className="text-red-400 font-bold">Currently unavailable</span>
+                      )}
+                    </p>
+                  </div>
                   
                   {/* Price Section */}
                   <div className="mb-5 flex items-center justify-center space-x-2 mt-auto">
