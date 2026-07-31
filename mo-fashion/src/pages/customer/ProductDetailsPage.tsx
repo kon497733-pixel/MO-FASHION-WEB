@@ -59,10 +59,9 @@ export default function ProductDetailsPage() {
       const initializeProduct = (prodData: any) => {
         setProduct(prodData);
         
-        // 🚀 অ্যাডমিন প্যানেল থেকে আসা কাস্টম অপশনগুলো সেট করা
+        // 🚀 অ্যাডমিন প্যানেল থেকে আসা কাস্টম অপশনগুলো (Variants) সেট করা
         const initialVariants: Record<string, string> = {};
         
-        // নতুন ডাইনামিক ভ্যারিয়েন্ট থাকলে
         if (prodData.variants && prodData.variants.length > 0) {
           prodData.variants.forEach((v: any) => {
             if (v.options && v.options.length > 0) {
@@ -131,22 +130,23 @@ export default function ProductDetailsPage() {
     const discountPercent = Number(product.discount) || 0;
     const sellingPrice = discountPercent > 0 ? originalPrice - (originalPrice * discountPercent / 100) : originalPrice;
 
-    // 🚀 কার্টের জন্য ডাটা ফরম্যাট করা
+    // 🚀 কার্টের জন্য ডাইনামিক ডাটা ফরম্যাট করা
     let cartColor = 'N/A';
-    let cartSize = 'N/A';
+    let cartSizeArray: string[] = [];
 
     const variantKeys = Object.keys(selectedVariants);
     if (variantKeys.length > 0) {
-      // Color বা color নাম থাকলে সেটাকে কালারে নেবে
-      const colorKey = variantKeys.find(k => k.toLowerCase().includes('color'));
-      if (colorKey) cartColor = selectedVariants[colorKey];
-      
-      // বাকি সব অপশন (Size, Material etc) একসাথে সাইজ ফিল্ডে ঢুকবে (কার্টে দেখানোর জন্য)
-      const otherKeys = variantKeys.filter(k => !k.toLowerCase().includes('color'));
-      if (otherKeys.length > 0) {
-        cartSize = otherKeys.map(k => selectedVariants[k]).join(', ');
-      }
+      variantKeys.forEach((key) => {
+        if (key.toLowerCase().includes('color')) {
+          cartColor = selectedVariants[key];
+        } else {
+          // Color ছাড়া বাকি সব অপশন (Size, Material etc.) কার্টে একসাথে দেখাবে
+          cartSizeArray.push(`${key}: ${selectedVariants[key]}`);
+        }
+      });
     }
+
+    const cartSize = cartSizeArray.length > 0 ? cartSizeArray.join(', ') : 'Standard';
 
     const cartItem = {
       id: String(product._id || product.id),
@@ -241,6 +241,8 @@ export default function ProductDetailsPage() {
   const originalPrice = Number(product.price) || 0;
   const discountPercent = Number(product.discount) || 0;
   const currentPrice = discountPercent > 0 ? originalPrice - (originalPrice * discountPercent / 100) : originalPrice;
+  const stockVal = Number(product.stock) || 0;
+  const dummySoldCount = product.sold || Math.floor((product.reviews || 24) * 3.5); // ডামি সোল্ড কাউন্ট
 
   return (
     <main className="min-h-screen py-8 bg-[#111111] text-white">
@@ -257,7 +259,6 @@ export default function ProductDetailsPage() {
           <span className="text-[#D4AF37] truncate">{product.name}</span>
         </div>
 
-        {/* Main Product Section */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
           
           {/* Column 1: Image Gallery */}
@@ -279,7 +280,6 @@ export default function ProductDetailsPage() {
               )}
             </div>
             
-            {/* Thumbnails */}
             {galleryImages.length > 1 && (
               <div className="flex space-x-3 overflow-x-auto custom-scrollbar pb-2">
                 {galleryImages.map((img: string, idx: number) => (
@@ -309,7 +309,7 @@ export default function ProductDetailsPage() {
               </div>
             </div>
 
-            <div className="flex items-center space-x-4 mb-4 pb-4 border-b border-gray-800">
+            <div className="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-800 flex-wrap gap-y-2">
               <div className="flex text-[#D4AF37]">
                 {[...Array(5)].map((_, i) => (
                   <Star key={i} size={16} fill={i < 4 ? "currentColor" : "none"} />
@@ -319,13 +319,37 @@ export default function ProductDetailsPage() {
                 {product.reviews || 24} Ratings
               </span>
               <span className="text-gray-500">|</span>
+              {/* 🚀 Sold Count (Daraz Style) */}
+              <span className="text-gray-400 text-sm">{dummySoldCount} Sold</span>
+              <span className="text-gray-500">|</span>
               <span className="text-gray-400 text-sm">Brand: <span className="text-blue-400 hover:underline cursor-pointer">MO Premium</span></span>
             </div>
 
-            <div className="mb-6 flex items-center space-x-3">
-              <p className="text-4xl font-bold text-[#D4AF37]">{siteSettings?.currency || '৳'}{currentPrice.toFixed(2)}</p>
+            <div className="mb-4 flex items-center space-x-3">
+              <p className="text-4xl font-bold text-[#D4AF37]">{siteSettings?.currency || '৳'} {currentPrice.toFixed(2)}</p>
               {discountPercent > 0 && (
-                <p className="text-gray-500 line-through text-lg">{siteSettings?.currency || '৳'}{originalPrice.toFixed(2)}</p>
+                <p className="text-gray-500 line-through text-lg">{siteSettings?.currency || '৳'} {originalPrice.toFixed(2)}</p>
+              )}
+            </div>
+
+            {/* 🚀 Stylish Stock Status */}
+            <div className="mb-6">
+              {stockVal > 10 ? (
+                <span className="inline-block bg-green-500/10 text-green-500 px-3 py-1 rounded text-xs font-bold border border-green-500/20 tracking-wider">
+                  IN STOCK
+                </span>
+              ) : stockVal > 0 ? (
+                <div className="inline-flex flex-col">
+                  <span className="inline-block bg-yellow-500/10 text-yellow-500 px-3 py-1 rounded text-xs font-bold border border-yellow-500/20 tracking-wider w-max mb-1">
+                    LOW STOCK
+                  </span>
+                  {/* 🚀 Remaining items highlight */}
+                  <span className="text-[#D4AF37] text-xs font-bold">Only {stockVal} items left!</span>
+                </div>
+              ) : (
+                <span className="inline-block bg-red-500/10 text-red-500 px-3 py-1 rounded text-xs font-bold border border-red-500/20 tracking-wider">
+                  OUT OF STOCK
+                </span>
               )}
             </div>
 
@@ -366,14 +390,14 @@ export default function ProductDetailsPage() {
             <div className="flex flex-col sm:flex-row gap-4 mt-auto">
               <button 
                 onClick={handleBuyNow}
-                disabled={product.stock === 0 || product.status === 'Out of Stock'}
+                disabled={stockVal === 0 || product.status === 'Out of Stock'}
                 className="flex-1 h-12 rounded-md font-bold uppercase tracking-wider transition-all shadow-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
               >
                 Buy Now
               </button>
               <button 
                 onClick={handleAddToCart}
-                disabled={product.stock === 0 || product.status === 'Out of Stock'}
+                disabled={stockVal === 0 || product.status === 'Out of Stock'}
                 className="flex-1 h-12 flex items-center justify-center space-x-2 rounded-md font-bold uppercase tracking-wider transition-colors bg-[#D4AF37] text-black hover:bg-white disabled:opacity-50"
               >
                 <ShoppingBag size={20} />
