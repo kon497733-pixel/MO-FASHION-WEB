@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Mail, Phone, MapPin, CreditCard, Smartphone, Banknote, HelpCircle, ShieldCheck, Truck } from 'lucide-react';
+import { Mail, Phone, MapPin, CreditCard, Smartphone, Banknote, HelpCircle, ShieldCheck, Truck, Globe } from 'lucide-react';
 import { useSettingsStore } from '../../store/useSettingsStore';
-
-// 🚀 ফায়ারবেস ক্লাউড ডাটাবেজ ইমপোর্ট
-import { db } from '../../firebase/config';
-import { doc, onSnapshot } from 'firebase/firestore';
 
 export default function Footer() {
   const { settings } = useSettingsStore();
@@ -14,7 +10,7 @@ export default function Footer() {
   const [siteSettings, setSiteSettings] = useState<any>({
     storeName: 'MO FASHION',
     logoUrl: '',
-    tagline: 'Premium E-Commerce Experience. OWNER - MD.MEHEDI HASAN . (1589)',
+    tagline: 'Premium E-Commerce Experience.',
     contactEmail: 'kon497733@gmail.com',
     phoneNumber: '+880 1707697445',
     address: 'CDA Agrabad, Chattogram, Bangladesh',
@@ -23,27 +19,51 @@ export default function Footer() {
     shippingOutside: 150,
     enableBkash: true,
     enableCard: true,
-    enableCOD: true
+    enableCOD: true,
+    facebook: 'https://facebook.com',
+    instagram: 'https://instagram.com',
+    twitter: 'https://twitter.com'
   });
 
-  // 🚀 রিয়েল-টাইম ক্লাউড এবং লোকাল সেটিংস লোড করা
+  // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম সেটিংস লোড করা
   useEffect(() => {
-    const savedSettings = localStorage.getItem('mo_fashion_settings');
-    if (savedSettings) {
-      try {
-        setSiteSettings((prev: any) => ({ ...prev, ...JSON.parse(savedSettings) }));
-      } catch (e) {}
-    }
-
-    try {
-      const docRef = doc(db, 'settings', 'store_settings');
-      const unsubscribe = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setSiteSettings((prev: any) => ({ ...prev, ...docSnap.data() }));
+    const fetchFooterSettings = async () => {
+      // ১. প্রথমে লোকাল মেমোরি থেকে ইনস্ট্যান্ট ডাটা লোড
+      const savedSettings = localStorage.getItem('mo_fashion_settings');
+      if (savedSettings) {
+        try {
+          setSiteSettings((prev: any) => ({ ...prev, ...JSON.parse(savedSettings) }));
+        } catch (e) {
+          console.error("Error parsing footer settings", e);
         }
-      });
-      return () => unsubscribe();
-    } catch (e) {}
+      }
+
+      // ২. লাইভ ক্লাউড ডাটাবেস (MongoDB Backend) থেকে সিঙ্ক করা
+      try {
+        const response = await fetch('http://localhost:5000/api/settings');
+        if (response.ok) {
+          const cloudData = await response.json();
+          if (cloudData && Object.keys(cloudData).length > 0) {
+            setSiteSettings((prev: any) => ({ ...prev, ...cloudData }));
+            localStorage.setItem('mo_fashion_settings', JSON.stringify(cloudData));
+          }
+        }
+      } catch (e) {
+        console.warn("Backend API offline, using cached footer settings.");
+      }
+    };
+
+    fetchFooterSettings();
+
+    // অ্যাডমিন প্যানেল থেকে সেটিংস সেভ হলে লাইভ আপডেটের ইভেন্ট লিসেনার
+    const handleSettingsUpdate = () => fetchFooterSettings();
+    window.addEventListener('settingsUpdated', handleSettingsUpdate);
+    window.addEventListener('storage', handleSettingsUpdate);
+
+    return () => {
+      window.removeEventListener('settingsUpdated', handleSettingsUpdate);
+      window.removeEventListener('storage', handleSettingsUpdate);
+    };
   }, []);
 
   const active = { ...safeSettings, ...siteSettings };
@@ -52,7 +72,7 @@ export default function Footer() {
     <footer className="bg-[#0A0A0A] border-t border-[#D4AF37]/20 pt-16 pb-12 text-gray-400 mt-auto">
       <div className="container mx-auto px-4">
         
-        {/* 🚀 ৪ কলামের সম্পূর্ণ বিস্তারিত ফুটার সেকশন (আগের কোনো তথ্য বাদ দেওয়া হয়নি) */}
+        {/* ৪ কলামের সম্পূর্ণ বিস্তারিত ফুটার সেকশন */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 pb-12 border-b border-gray-800">
           
           {/* Column 1: Brand Info & Admin Uploaded Logo */}
@@ -78,9 +98,28 @@ export default function Footer() {
               <ShieldCheck size={16} />
               <span>100% Authentic & Secure Shopping</span>
             </div>
+
+            {/* Social Media Links */}
+            <div className="flex items-center space-x-3 pt-2">
+              {active?.facebook && (
+                <a href={active.facebook} target="_blank" rel="noopener noreferrer" className="bg-[#1A1A1A] p-2 rounded-full text-gray-400 hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-colors border border-gray-800">
+                  <Globe size={16} />
+                </a>
+              )}
+              {active?.instagram && (
+                <a href={active.instagram} target="_blank" rel="noopener noreferrer" className="bg-[#1A1A1A] p-2 rounded-full text-gray-400 hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-colors border border-gray-800">
+                  <Globe size={16} />
+                </a>
+              )}
+              {active?.twitter && (
+                <a href={active.twitter} target="_blank" rel="noopener noreferrer" className="bg-[#1A1A1A] p-2 rounded-full text-gray-400 hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-colors border border-gray-800">
+                  <Globe size={16} />
+                </a>
+              )}
+            </div>
           </div>
 
-          {/* Column 2: Quick Links (সব লিংক পুনুরুদ্ধার করা হয়েছে) */}
+          {/* Column 2: Quick Links */}
           <div>
             <h3 className="text-white font-serif font-bold text-base mb-4 uppercase tracking-wider border-b border-[#D4AF37]/20 pb-2 inline-block">
               Quick Links

@@ -11,27 +11,44 @@ export default function About() {
     aboutImageUrl: ''
   });
 
-  // 🚀 সেটিংস থেকে রিয়েল-টাইম ছবি লোড করা
+  // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম এবাউট সেটিং লোড করা
   useEffect(() => {
-    const loadSettings = () => {
+    const fetchAboutSettings = async () => {
+      // ১. প্রথমে লোকাল মেমোরি থেকে ইনস্ট্যান্ট ডাটা লোড
       const savedSettings = localStorage.getItem('mo_fashion_settings');
       if (savedSettings) {
         try {
-          setSiteSettings(JSON.parse(savedSettings));
+          setSiteSettings((prev: any) => ({ ...prev, ...JSON.parse(savedSettings) }));
         } catch (e) {
           console.error("Error loading settings in About page", e);
         }
       }
+
+      // ২. ক্লাউড ডাটাবেস (MongoDB Backend) থেকে সিঙ্ক করা
+      try {
+        const response = await fetch('http://localhost:5000/api/settings');
+        if (response.ok) {
+          const cloudData = await response.json();
+          if (cloudData && Object.keys(cloudData).length > 0) {
+            setSiteSettings((prev: any) => ({ ...prev, ...cloudData }));
+            localStorage.setItem('mo_fashion_settings', JSON.stringify(cloudData));
+          }
+        }
+      } catch (err) {
+        console.warn("Backend API offline, using cached about settings.");
+      }
     };
 
-    loadSettings();
+    fetchAboutSettings();
 
-    window.addEventListener('storage', loadSettings);
-    window.addEventListener('settingsUpdated', loadSettings);
+    // সেটিংস আপডেট ইভেন্ট লিসেনার
+    const handleSettingsUpdate = () => fetchAboutSettings();
+    window.addEventListener('storage', handleSettingsUpdate);
+    window.addEventListener('settingsUpdated', handleSettingsUpdate);
 
     return () => {
-      window.removeEventListener('storage', loadSettings);
-      window.removeEventListener('settingsUpdated', loadSettings);
+      window.removeEventListener('storage', handleSettingsUpdate);
+      window.removeEventListener('settingsUpdated', handleSettingsUpdate);
     };
   }, []);
 
@@ -93,7 +110,7 @@ export default function About() {
             About {siteSettings?.storeName || 'MO FASHION'}
           </h1>
           <p className="text-gray-400 max-w-2xl mx-auto text-lg">
-            Redefining Luxury & Fashion since 2026.
+            Redefining Luxury & Fashion.
           </p>
         </div>
 
@@ -107,14 +124,14 @@ export default function About() {
               Our Story
             </h2>
             <p className="text-gray-300 leading-relaxed text-base">
-              Founded in 2026 in Chattogram, Bangladesh, <strong className="text-[#D4AF37]">{siteSettings?.storeName || 'MO FASHION'}</strong> started with a simple vision: to make premium, high-quality fashion accessible to everyone. What began as a small boutique has now transformed into a nationwide e-commerce destination for fashion enthusiasts.
+              Founded in Bangladesh, <strong className="text-[#D4AF37]">{siteSettings?.storeName || 'MO FASHION'}</strong> started with a simple vision: to make premium, high-quality fashion accessible to everyone. What began as a small boutique has now transformed into a nationwide e-commerce destination for fashion enthusiasts.
             </p>
             <p className="text-gray-300 leading-relaxed text-base">
               We believe that clothes are not just fabric; they are a statement of who you are. That’s why every product in our catalog is handpicked to ensure it meets the highest standards of craftsmanship, durability, and style.
             </p>
           </div>
 
-          {/* Right Box: "The Fashion Team" (আপনার সেভ করা ফটো) */}
+          {/* Right Box: "The Fashion Team" (ডাটাবেস থেকে সিঙ্ক করা অরিজিনাল ফটো) */}
           <div className="bg-[#1A1A1A] border-2 border-[#D4AF37]/30 rounded-2xl p-3 flex items-center justify-center overflow-hidden shadow-2xl relative min-h-[300px] md:min-h-[360px]">
             {siteSettings?.aboutImageUrl ? (
               <img 
@@ -133,12 +150,12 @@ export default function About() {
 
         </div>
 
-        {/* 🚀 ফিচার কার্ড সেকশন (মাউস হোভার গ্লো হাইলাইট এবং ৮টি ফিচার সহ) */}
+        {/* 🚀 ফিচার কার্ড সেকশন */}
         <div className="pt-12 border-t border-[#D4AF37]/20">
           
           <div className="text-center mb-12">
             <h2 className="text-2xl md:text-4xl font-serif font-bold text-[#D4AF37] uppercase tracking-widest">
-              Why Choose MO FASHION
+              Why Choose {siteSettings?.storeName || 'MO FASHION'}
             </h2>
             <div className="w-24 h-1 bg-[#D4AF37] mx-auto mt-4 rounded-full opacity-50"></div>
           </div>
@@ -151,21 +168,17 @@ export default function About() {
                   key={index} 
                   className="bg-[#1A1A1A] p-6 rounded-2xl border border-gray-800/80 hover:border-[#D4AF37] transition-all duration-500 hover:shadow-[0_0_25px_rgba(212,175,55,0.25)] hover:-translate-y-2 group relative overflow-hidden flex flex-col justify-between"
                 >
-                  {/* হোভার স্মুথ গ্র্যাডিয়েন্ট ব্যাকগ্রাউন্ড */}
                   <div className="absolute inset-0 bg-gradient-to-b from-[#D4AF37]/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
 
                   <div>
-                    {/* আইকন বক্স */}
                     <div className="w-14 h-14 bg-[#111111] border border-[#D4AF37]/30 rounded-xl flex items-center justify-center mb-5 mx-auto group-hover:bg-[#D4AF37] group-hover:border-[#D4AF37] transition-all duration-300 shadow-md">
                       <Icon size={28} className="text-[#D4AF37] group-hover:text-black transition-colors duration-300" />
                     </div>
 
-                    {/* টাইটেল */}
                     <h3 className="text-lg font-serif font-bold text-white mb-2 text-center group-hover:text-[#D4AF37] transition-colors">
                       {item.title}
                     </h3>
 
-                    {/* বর্ণনা */}
                     <p className="text-gray-400 text-sm text-center leading-relaxed">
                       {item.desc}
                     </p>

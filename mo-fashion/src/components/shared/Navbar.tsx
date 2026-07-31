@@ -3,10 +3,6 @@ import { Link, useLocation } from 'react-router-dom';
 import { ShoppingBag, User, Menu, X, Search } from 'lucide-react';
 import { useCartStore } from '../../store/useCartStore';
 
-// 🚀 ফায়ারবেস ক্লাউড সিঙ্ক
-import { db } from '../../firebase/config';
-import { doc, onSnapshot } from 'firebase/firestore';
-
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
@@ -24,43 +20,56 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // 🚀 ১. ক্লাউড ডাটাবেস ও লোকাল মেমোরি থেকে আসল লোগো সিঙ্ক করা (কোনো ফেইক আইকন থাকবে না)
+  // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে লাইভ লোগো ও স্টোর নেম সিঙ্ক করা
   useEffect(() => {
-    // প্রথমে লোকাল মেমোরি থেকে পড়া
-    const savedSettings = localStorage.getItem('mo_fashion_settings');
-    if (savedSettings) {
-      try {
-        setSiteSettings(JSON.parse(savedSettings));
-      } catch (e) {
-        console.error("Error parsing site settings", e);
-      }
-    }
-
-    // ফায়ারবেস ক্লাউড থেকে লাইভ লোগো সিঙ্ক করা
-    try {
-      const docRef = doc(db, 'settings', 'store_settings');
-      const unsubscribe = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const cloudData = docSnap.data();
-          setSiteSettings(cloudData);
-          localStorage.setItem('mo_fashion_settings', JSON.stringify(cloudData));
+    const fetchNavbarSettings = async () => {
+      // ১. প্রথমে লোকাল মেমোরি থেকে ইনস্ট্যান্ট ডাটা লোড করা
+      const savedSettings = localStorage.getItem('mo_fashion_settings');
+      if (savedSettings) {
+        try {
+          setSiteSettings(JSON.parse(savedSettings));
+        } catch (e) {
+          console.error("Error parsing site settings", e);
         }
-      });
-      return () => unsubscribe();
-    } catch (err) {
-      console.log("Firebase sync skipped in Navbar.");
-    }
+      }
+
+      // ২. লাইভ ক্লাউড ডাটাবেস (MongoDB Backend) থেকে রিয়েল-টাইম লোগো সিঙ্ক করা
+      try {
+        const response = await fetch('http://localhost:5000/api/settings');
+        if (response.ok) {
+          const cloudData = await response.json();
+          if (cloudData && Object.keys(cloudData).length > 0) {
+            setSiteSettings(cloudData);
+            localStorage.setItem('mo_fashion_settings', JSON.stringify(cloudData));
+          }
+        }
+      } catch (err) {
+        console.warn("Backend API offline, using cached navbar settings.");
+      }
+    };
+
+    fetchNavbarSettings();
+
+    // অ্যাডমিন প্যানেল থেকে সেভ করার সাথে সাথে লাইভ আপডেট হওয়ার ইভেন্ট লিসেনার
+    const handleSettingsUpdate = () => fetchNavbarSettings();
+    window.addEventListener('settingsUpdated', handleSettingsUpdate);
+    window.addEventListener('storage', handleSettingsUpdate);
+
+    return () => {
+      window.removeEventListener('settingsUpdated', handleSettingsUpdate);
+      window.removeEventListener('storage', handleSettingsUpdate);
+    };
   }, []);
 
   useEffect(() => {
     const savedProducts = localStorage.getItem('mo_fashion_products');
     if (savedProducts) {
-      setAllProducts(JSON.parse(savedProducts));
+      try { setAllProducts(JSON.parse(savedProducts)); } catch (e) {}
     }
 
     const savedCategories = localStorage.getItem('mo_fashion_categories');
     if (savedCategories) {
-      setAllCategories(JSON.parse(savedCategories));
+      try { setAllCategories(JSON.parse(savedCategories)); } catch (e) {}
     } else {
       setAllCategories([
         { id: 1, name: "Men's Collection" },
@@ -80,14 +89,14 @@ export default function Navbar() {
     const lowerQuery = searchQuery.toLowerCase();
     
     allCategories.forEach(c => {
-      if (c.name.toLowerCase().includes(lowerQuery)) {
-        filteredResults.push({ id: c.id, name: c.name, type: 'Category', link: `/category/${encodeURIComponent(c.name)}` });
+      if (c.name && c.name.toLowerCase().includes(lowerQuery)) {
+        filteredResults.push({ id: c.id || c._id, name: c.name, type: 'Category', link: `/category/${encodeURIComponent(c.name)}` });
       }
     });
 
     allProducts.forEach(p => {
-      if (p.name.toLowerCase().includes(lowerQuery) || p.category.toLowerCase().includes(lowerQuery)) {
-        filteredResults.push({ id: p.id, name: p.name, type: 'Product', link: `/product/${p.id}` });
+      if (p.name && (p.name.toLowerCase().includes(lowerQuery) || (p.category && p.category.toLowerCase().includes(lowerQuery)))) {
+        filteredResults.push({ id: p._id || p.id, name: p.name, type: 'Product', link: `/product/${p._id || p.id}` });
       }
     });
   }
@@ -151,7 +160,7 @@ export default function Navbar() {
     <header className="bg-secondary border-b border-primary/20 sticky top-0 z-50 shadow-md py-2">
       <div className="container mx-auto px-4 flex justify-between items-center gap-4">
         
-        {/* 🚀 লোগো এবং স্টোরের নাম (শুধুমাত্র আপলোড করা আসল লোগোই দেখাবে) */}
+        {/* 🚀 লোগো এবং স্টোরের নাম (সরাসরি ক্লাউড ডাটাবেস থেকে সিঙ্ক করা লোগো) */}
         <div className="flex items-center space-x-3 shrink-0">
           
           <Link to="/" className="flex items-center space-x-3 group shrink-0">

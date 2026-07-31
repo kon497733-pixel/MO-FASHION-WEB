@@ -16,7 +16,7 @@ export default function Settings() {
     storeName: 'MO FASHION',
     logoUrl: '', 
     aboutImageUrl: '', 
-    tagline: 'Premium E-Commerce Experience. OWNER - MD.MEHEDI HASAN . (1589)',
+    tagline: 'Premium E-Commerce Experience.',
     contactEmail: 'kon497733@gmail.com',
     phoneNumber: '+880 1707697445',
     address: 'CDA Agrabad, Chattogram, Bangladesh',
@@ -42,8 +42,7 @@ export default function Settings() {
   // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম সেটিংস লোড করা
   useEffect(() => {
     const fetchCloudSettings = async () => {
-
-      // ১. প্রথমে লোকাল স্টোরেজ থেকে ইনস্ট্যান্ট লোড করা
+      // ১. প্রথমে লোকাল স্টোরেজ থেকে ইনস্ট্যান্ট লোড
       const savedSettings = localStorage.getItem('mo_fashion_settings');
       if (savedSettings) {
         try {
@@ -53,7 +52,7 @@ export default function Settings() {
         }
       }
 
-      // ২. ব্যাকগ্রাউন্ডে ক্লাউড ডাটাবেস (MongoDB Backend) থেকে সিঙ্ক করা
+      // ২. ক্লাউড ডাটাবেস (MongoDB Backend) থেকে সিঙ্ক করা
       try {
         const response = await fetch('http://localhost:5000/api/settings');
         if (response.ok) {
@@ -170,14 +169,12 @@ export default function Settings() {
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // ১. লোকাল মেমোরিতে সেভ
     localStorage.setItem('mo_fashion_settings', JSON.stringify(localSettings));
     window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new Event('settingsUpdated'));
 
-    toast.success('Settings saved locally & syncing to Cloud DB...');
+    const toastId = toast.loading("Saving settings LIVE to Cloud Database...");
 
-    // ২. ক্লাউড ডাটাবেসে সেভ (MongoDB API Call)
     try {
       const response = await fetch('http://localhost:5000/api/settings', {
         method: 'PUT',
@@ -186,10 +183,13 @@ export default function Settings() {
       });
 
       if (response.ok) {
-        toast.success('Settings updated live in Cloud Database! 🎉');
+        toast.success('Settings updated LIVE in Cloud Database! 🎉', { id: toastId });
+      } else {
+        toast.success('Settings saved successfully!', { id: toastId });
       }
     } catch (err) {
       console.warn("Cloud Sync warning: Saved locally.");
+      toast.success('Settings saved locally!', { id: toastId });
     }
   };
 

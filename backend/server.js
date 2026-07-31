@@ -5,7 +5,8 @@ require('dotenv').config();
 
 // রাউট ফাইলগুলো ইমপোর্ট করা
 const productRoutes = require('./routes/productRoutes');
-const categoryRoutes = require('./routes/categoryRoutes'); // 🚀 ক্যাটাগরি রাউট যুক্ত করা হলো
+const categoryRoutes = require('./routes/categoryRoutes');
+const settingsRoutes = require('./routes/settingsRoutes'); // 🚀 গ্লোবাল সেটিংস রাউট
 
 // অ্যাপ ইনিশিয়ালাইজ করা
 const app = express();
@@ -13,7 +14,7 @@ const app = express();
 // মিডলওয়্যার (Middleware) - ফ্রন্টএন্ডের সাথে ডাটা আদান-প্রদানের জন্য
 app.use(cors());
 
-// 🚀 ছবি (Base64) আপলোড করার জন্য ডাটা লিমিট ডিফল্ট থেকে বাড়িয়ে 50MB করা হলো
+// লোগো ও ছবির (Base64) জন্য ডাটা লিমিট 50MB করা হলো
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -28,7 +29,8 @@ mongoose.connect(process.env.MONGO_URI)
 
 // API রাউটস (Routes) যুক্ত করা
 app.use('/api/products', productRoutes);
-app.use('/api/categories', categoryRoutes); // 🚀 ক্যাটাগরি API লিংক যুক্ত করা হলো
+app.use('/api/categories', categoryRoutes);
+app.use('/api/settings', settingsRoutes); // 🚀 ক্লাউড সেটিংস API যুক্ত করা হলো
 
 // বেসিক রাউট (সার্ভার ঠিকমতো কাজ করছে কি না তা চেক করার জন্য)
 app.get('/', (req, res) => {
