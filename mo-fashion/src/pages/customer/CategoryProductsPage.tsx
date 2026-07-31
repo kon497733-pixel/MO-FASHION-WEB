@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { ChevronLeft, ShoppingBag, Search, Tag, Image as ImageIcon, Star } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
@@ -8,7 +8,6 @@ import { useCartStore } from '../../store/useCartStore';
 
 export default function CategoryProductsPage() {
   const { id } = useParams(); 
-  const navigate = useNavigate();
   const { settings } = useSettingsStore();
   const safeSettings = settings as any;
   const addToCart = useCartStore((state) => state.addToCart);
@@ -24,7 +23,6 @@ export default function CategoryProductsPage() {
   const categoryTitle = id ? decodeURIComponent(id) : "Exclusive Collection";
 
   useEffect(() => {
-    // প্রতি ২.৫ সেকেন্ড পর পর ছবি চেঞ্জ হবে
     const interval = setInterval(() => {
       setImageIndex((prev) => prev + 1);
     }, 2500);
@@ -42,7 +40,6 @@ export default function CategoryProductsPage() {
         if (response.ok) {
           const data = await response.json();
           if (Array.isArray(data)) {
-            // শুধুমাত্র সিলেক্ট করা ক্যাটাগরির প্রোডাক্ট ফিল্টার করা
             const filtered = data.filter((product: any) => {
               const pCat = (product.category || '').trim().toLowerCase();
               return pCat === targetCat;
@@ -54,7 +51,6 @@ export default function CategoryProductsPage() {
         }
       } catch (err) {
         console.error("Error fetching category products:", err);
-        // API ফেইল করলে লোকাল স্টোরেজ থেকে ফিল্টার করে নেবে
         const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
         const filtered = savedProducts.filter((product: any) => {
           const pCat = (product.category || '').trim().toLowerCase();
@@ -69,7 +65,6 @@ export default function CategoryProductsPage() {
     fetchCategoryProducts();
   }, [categoryTitle]);
 
-  // Add to Cart লজিক
   const handleAddToCart = (product: any, e: React.MouseEvent) => {
     e.preventDefault(); 
     e.stopPropagation();
@@ -83,7 +78,6 @@ export default function CategoryProductsPage() {
     const discPercent = Number(product.discount) || 0;
     const sellingPrice = discPercent > 0 ? originalPrice - (originalPrice * discPercent / 100) : originalPrice;
 
-    // ইমেজ সিলেক্ট করা
     const productImage = product.images && product.images.length > 0 && !product.images[0].includes('No+Image') 
       ? product.images[0] 
       : (product.imageUrl || '');
@@ -104,7 +98,6 @@ export default function CategoryProductsPage() {
     toast.success(`${product.name} added to cart!`);
   };
 
-  // সার্চ ফিল্টার
   const displayedProducts = categoryProducts.filter(product => 
     (product.name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -117,13 +110,11 @@ export default function CategoryProductsPage() {
 
       <div className="container mx-auto px-4">
         
-        {/* Back Button */}
         <Link to="/categories" className="inline-flex items-center text-gray-400 hover:text-[#D4AF37] transition-colors mb-8 font-medium">
           <ChevronLeft size={20} className="mr-1" />
           <span>Back to Categories</span>
         </Link>
 
-        {/* Page Header */}
         <div className="text-center mb-12 border-b border-[#D4AF37]/10 pb-10">
           <h1 className="text-3xl md:text-5xl font-serif font-bold text-[#D4AF37] mb-4 tracking-wider uppercase">
             {categoryTitle}
@@ -132,7 +123,6 @@ export default function CategoryProductsPage() {
             Explore our exclusive collection of {categoryTitle.toLowerCase()}.
           </p>
 
-          {/* Search Bar */}
           {categoryProducts.length > 0 && (
             <div className="max-w-xl mx-auto relative group">
               <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
@@ -149,7 +139,6 @@ export default function CategoryProductsPage() {
           )}
         </div>
 
-        {/* Products Grid */}
         {loading ? (
           <div className="text-center text-[#D4AF37] py-20 text-xl font-serif animate-pulse">Loading products from database...</div>
         ) : categoryProducts.length === 0 ? (
@@ -165,16 +154,15 @@ export default function CategoryProductsPage() {
           <div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
               {displayedProducts.map((product) => {
-                // ডিসকাউন্ট ও প্রাইস ক্যালকুলেশন
                 const originalPrice = Number(product.price) || 0;
                 const discount = Number(product.discount) || 0;
                 const sellingPrice = discount > 0 ? originalPrice - (originalPrice * discount / 100) : originalPrice;
                 const stockVal = Number(product.stock) || 0;
                 
-                // ডামি সোল্ড কাউন্ট (দারাজের মতো)
-                const dummySoldCount = product.sold || Math.floor((product.reviews || 24) * 3.5);
+                // 🚀 রিয়েল সোল্ড ও রেটিং ডাটা (কোনো ফেইক ভ্যালু নেই)
+                const realSoldCount = product.sold || 0;
+                const realRatingValue = product.rating || 0;
 
-                // ইমেজের অ্যারে তৈরি
                 const productImages = (product.images && product.images.length > 0 && !product.images[0].includes('No+Image')) 
                   ? product.images 
                   : (product.imageUrl ? [product.imageUrl] : []);
@@ -182,7 +170,6 @@ export default function CategoryProductsPage() {
                 return (
                   <div key={product._id || product.id} className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-xl p-4 text-center hover:border-[#D4AF37]/60 transition-all duration-300 group flex flex-col shadow-lg relative">
                     
-                    {/* 🚀 Image Box with Auto-Slider */}
                     <Link to={`/product/${product._id || product.id}`} className="block relative overflow-hidden rounded-lg mb-4 bg-[#111111] aspect-[4/5]">
                       {productImages.length > 0 ? (
                         productImages.map((img: string, idx: number) => (
@@ -202,7 +189,6 @@ export default function CategoryProductsPage() {
                         </div>
                       )}
 
-                      {/* 🚀 Discount Badge */}
                       {discount > 0 && (
                         <div className="absolute top-3 left-3 bg-gradient-to-r from-orange-500 to-red-600 text-white text-xs font-extrabold px-3 py-1.5 rounded shadow-lg z-10 flex items-center">
                           <Tag size={12} className="mr-1" />
@@ -210,7 +196,6 @@ export default function CategoryProductsPage() {
                         </div>
                       )}
 
-                      {/* 🚀 Stock Status Badge */}
                       {stockVal <= 0 || product.status === 'Out of Stock' ? (
                         <span className="absolute top-3 right-3 bg-red-600/90 text-white text-[10px] font-bold px-2.5 py-1 rounded backdrop-blur-sm z-10 uppercase tracking-wider">Sold Out</span>
                       ) : stockVal <= 5 ? (
@@ -218,24 +203,24 @@ export default function CategoryProductsPage() {
                       ) : null}
                     </Link>
                     
-                    {/* Product Title */}
                     <Link to={`/product/${product._id || product.id}`} className="mt-auto">
                       <h3 className="font-bold text-white mb-1 hover:text-[#D4AF37] transition-colors line-clamp-2 cursor-pointer text-sm">
                         {product.name}
                       </h3>
                     </Link>
 
-                    {/* 🚀 Rating & Sold Count (Daraz Style) */}
+                    {/* 🚀 রিয়েল রেটিং ও সোল্ড ডাটা */}
                     <div className="flex items-center justify-center space-x-2 mt-1 mb-2 text-xs">
                       <div className="flex items-center text-[#D4AF37]">
-                        <Star size={12} fill="currentColor" className="mr-1" />
-                        <span>{product.rating || "5.0"}</span>
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} size={12} fill={i < Math.round(realRatingValue) ? "currentColor" : "none"} />
+                        ))}
                       </div>
                       <span className="text-gray-600">|</span>
-                      <span className="text-gray-400">{dummySoldCount} Sold</span>
+                      <span className="text-gray-400">{realSoldCount} Sold</span>
                     </div>
 
-                    {/* 🚀 Stylish Remaining Stock Box */}
+                    {/* Stylish Remaining Stock Box */}
                     <div className="bg-[#111111] border border-gray-800 rounded px-2 py-1.5 mb-3 mx-auto w-max">
                       <p className="text-[11px] text-gray-400">
                         {stockVal > 0 ? (
@@ -246,7 +231,6 @@ export default function CategoryProductsPage() {
                       </p>
                     </div>
                     
-                    {/* Price Section */}
                     <div className="mb-5 flex items-center justify-center space-x-2">
                       <span className="text-[#D4AF37] font-bold text-xl">{safeSettings?.currency || '৳'} {sellingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       {discount > 0 && (
@@ -254,7 +238,6 @@ export default function CategoryProductsPage() {
                       )}
                     </div>
                     
-                    {/* Add to Cart Button */}
                     <button 
                       onClick={(e) => handleAddToCart(product, e)}
                       disabled={stockVal <= 0 || product.status === 'Out of Stock'}
@@ -272,7 +255,6 @@ export default function CategoryProductsPage() {
               })}
             </div>
 
-            {/* No Search Result */}
             {displayedProducts.length === 0 && (
               <div className="text-center py-16 text-gray-500">
                 <p>No products match your search "{searchQuery}".</p>
