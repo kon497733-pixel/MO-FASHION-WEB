@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Edit, Trash2, X, Image as ImageIcon, Folder, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, X, Image as ImageIcon, Folder, Upload, Eye, Package, CheckCircle, XCircle } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
 
@@ -7,11 +7,17 @@ export default function CategoryManagement() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadIndex, setUploadIndex] = useState<number | null>(null);
 
-  // 🚀 Local Storage পুরোপুরি বাদ দেওয়া হয়েছে।
   const [categories, setCategories] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]); // 🚀 প্রোডাক্ট লিস্ট রাখার স্টেট
   const [loading, setLoading] = useState(true);
+
+  // মোডাল স্টেটস
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
+
+  // 🚀 ক্যাটাগরির প্রোডাক্ট দেখার মোডাল স্টেট
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [selectedCategoryForView, setSelectedCategoryForView] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     _id: '',
@@ -20,30 +26,43 @@ export default function CategoryManagement() {
     images: ['']
   });
 
-  // 🚀 ১. শুধুমাত্র ডাটাবেজ (MongoDB API) থেকে আসল ক্যাটাগরি ফেচ করা
-  const fetchCategories = async () => {
+  // 🚀 ১. ডাটাবেজ (MongoDB API) ও লোকাল স্টোরেজ থেকে ক্যাটাগরি ও প্রোডাক্ট ফেচ করা
+  const fetchCategoriesAndProducts = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/categories');
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          setCategories(data);
+      const [catRes, prodRes] = await Promise.all([
+        fetch('http://localhost:5000/api/categories').catch(() => null),
+        fetch('http://localhost:5000/api/products').catch(() => null)
+      ]);
+
+      if (catRes && catRes.ok) {
+        const catData = await catRes.json();
+        if (Array.isArray(catData)) setCategories(catData);
+      }
+
+      if (prodRes && prodRes.ok) {
+        const prodData = await prodRes.json();
+        if (Array.isArray(prodData)) {
+          setProducts(prodData);
         } else {
-          setCategories([]);
+          const localProds = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
+          setProducts(localProds);
         }
+      } else {
+        const localProds = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
+        setProducts(localProds);
       }
     } catch (e) {
       console.error("Database connection failed", e);
-      // ডাটাবেস এরর দিলেও কোনো ডামি ডাটা তৈরি হবে না
-      setCategories([]);
+      const localProds = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
+      setProducts(localProds);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchCategories();
+    fetchCategoriesAndProducts();
   }, []);
 
   // 🚀 ২. ইমেজ আপলোড হ্যান্ডলার (অক্ষত রাখা হয়েছে)
@@ -163,7 +182,7 @@ export default function CategoryManagement() {
 
       if (response.ok) {
         toast.success(`Category ${modalMode === 'add' ? 'added' : 'updated'} successfully!`, { id: toastId });
-        fetchCategories(); // ক্লাউড ডাটাবেস থেকে ফ্রেশ ডাটা লোড করা
+        fetchCategoriesAndProducts(); 
         setIsModalOpen(false);
       } else {
         toast.error("Failed to save category.", { id: toastId });
@@ -194,32 +213,138 @@ export default function CategoryManagement() {
           <div className="text-center text-gray-500 py-10">No categories found in Database. Please add a category.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {categories.map((cat: any) => (
-              <div key={cat._id} className="bg-[#111111] p-4 rounded-xl border border-gray-800 space-y-3 shadow-md">
-                <div className="h-44 bg-[#1A1A1A] rounded-lg overflow-hidden relative border border-gray-800">
-                  {cat.images && cat.images[0] ? (
-                    <img src={cat.images[0]} alt={cat.name} className="w-full h-full object-cover" />
-                  ) : <Folder className="w-full h-full p-10 text-gray-600" />}
-                  
-                  {cat.images && cat.images.length > 1 && (
-                    <span className="absolute top-2 right-2 bg-black/80 text-[#D4AF37] text-[10px] font-bold px-2 py-1 rounded backdrop-blur-sm">
-                      {cat.images.length} Slideshow Images
-                    </span>
-                  )}
+            {categories.map((cat: any) => {
+              // 🚀 এই ক্যাটাগরিতে কয়টি প্রোডাক্ট আছে তার হিসাব
+              const catProducts = products.filter(p => 
+                String(p.category || '').trim().toLowerCase() === String(cat.name || '').trim().toLowerCase()
+              );
+
+              return (
+                <div key={cat._id} className="bg-[#111111] p-4 rounded-xl border border-gray-800 space-y-3 shadow-md flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="h-44 bg-[#1A1A1A] rounded-lg overflow-hidden relative border border-gray-800">
+                      {cat.images && cat.images[0] ? (
+                        <img src={cat.images[0]} alt={cat.name} className="w-full h-full object-cover" />
+                      ) : <Folder className="w-full h-full p-10 text-gray-600" />}
+                      
+                      {cat.images && cat.images.length > 1 && (
+                        <span className="absolute top-2 right-2 bg-black/80 text-[#D4AF37] text-[10px] font-bold px-2 py-1 rounded backdrop-blur-sm">
+                          {cat.images.length} Slideshow Images
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-bold text-lg text-white">{cat.name}</h3>
+                      {/* 🚀 প্রোডাক্ট সংখ্যা প্রদর্শন */}
+                      <span className="text-xs bg-[#D4AF37]/10 text-[#D4AF37] px-2.5 py-1 rounded-full font-bold border border-[#D4AF37]/20">
+                        {catProducts.length} {catProducts.length === 1 ? 'Product' : 'Products'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-gray-400 line-clamp-2">{cat.description || 'No description provided'}</p>
+                  </div>
+
+                  {/* বাটনসমূহ */}
+                  <div className="flex justify-end space-x-2 pt-3 border-t border-gray-800 mt-2">
+                    {/* 🚀 প্রোডাক্ট দেখার বাটন (Eye Button) */}
+                    <button 
+                      onClick={() => { setSelectedCategoryForView(cat); setIsViewModalOpen(true); }} 
+                      className="p-2 text-gray-400 hover:text-[#D4AF37] bg-[#1A1A1A] border border-gray-800 rounded-md transition-colors"
+                      title="View Products in Category"
+                    >
+                      <Eye size={16} />
+                    </button>
+                    <button onClick={() => handleOpenEdit(cat)} className="p-2 text-gray-400 hover:text-[#D4AF37] bg-[#1A1A1A] border border-gray-800 rounded-md transition-colors"><Edit size={16} /></button>
+                    <button onClick={() => handleDelete(cat._id, cat.name)} className="p-2 text-gray-400 hover:text-red-500 bg-[#1A1A1A] border border-gray-800 rounded-md transition-colors"><Trash2 size={16} /></button>
+                  </div>
                 </div>
-                <h3 className="font-bold text-lg text-white">{cat.name}</h3>
-                <p className="text-xs text-gray-400 line-clamp-2">{cat.description || 'No description provided'}</p>
-                <div className="flex justify-end space-x-2 pt-2 border-t border-gray-800">
-                  <button onClick={() => handleOpenEdit(cat)} className="p-2 text-gray-400 hover:text-[#D4AF37]"><Edit size={16} /></button>
-                  <button onClick={() => handleDelete(cat._id, cat.name)} className="p-2 text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Add / Edit Modal */}
+      {/* 🚀 ক্যাটাগরির প্রোডাক্ট দেখার মোডাল (View Category Products Modal) */}
+      {isViewModalOpen && selectedCategoryForView && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <div className="bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-2xl w-full max-w-3xl p-6 space-y-4 shadow-2xl flex flex-col max-h-[90vh]">
+            
+            <div className="flex justify-between items-center border-b border-gray-800 pb-3">
+              <div>
+                <h2 className="text-xl font-serif font-bold text-[#D4AF37] uppercase flex items-center">
+                  <Package className="mr-2" size={22} />
+                  Products in "{selectedCategoryForView.name}"
+                </h2>
+                <p className="text-xs text-gray-400 mt-1">
+                  Total Items: {products.filter(p => String(p.category || '').trim().toLowerCase() === String(selectedCategoryForView.name || '').trim().toLowerCase()).length}
+                </p>
+              </div>
+              <button onClick={() => setIsViewModalOpen(false)} className="text-gray-400 hover:text-white"><X size={24} /></button>
+            </div>
+
+            <div className="overflow-y-auto custom-scrollbar max-h-[60vh] space-y-3 pr-1">
+              {products.filter(p => String(p.category || '').trim().toLowerCase() === String(selectedCategoryForView.name || '').trim().toLowerCase()).length === 0 ? (
+                <div className="text-center text-gray-500 py-12">
+                  <Package size={48} className="mx-auto mb-3 opacity-30" />
+                  <p>No products added to this category yet.</p>
+                </div>
+              ) : (
+                products
+                  .filter(p => String(p.category || '').trim().toLowerCase() === String(selectedCategoryForView.name || '').trim().toLowerCase())
+                  .map((p: any, idx: number) => {
+                    const stockVal = Number(p.stock) || 0;
+                    const soldVal = Number(p.sold) || 0;
+                    const priceVal = Number(p.price) || 0;
+                    const isOutOfStock = stockVal <= 0 || p.status === 'Out of Stock';
+
+                    return (
+                      <div key={p._id || idx} className="bg-[#111111] p-4 rounded-xl border border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-12 h-12 bg-[#1A1A1A] rounded-lg overflow-hidden border border-gray-700 shrink-0 flex items-center justify-center">
+                            {p.images && p.images[0] && !p.images[0].includes('No+Image') ? (
+                              <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <ImageIcon size={20} className="text-gray-600" />
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-white text-sm line-clamp-1">{p.name}</h4>
+                            <p className="text-xs text-[#D4AF37] font-semibold mt-0.5">Price: ৳{priceVal.toFixed(2)}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-3 text-xs w-full sm:w-auto justify-between sm:justify-end">
+                          {/* 🚀 সোল্ড সংখ্যা (Sold Count) */}
+                          <div className="bg-[#1A1A1A] px-3 py-1.5 rounded-lg border border-gray-800 text-gray-300">
+                            Sold: <span className="text-[#D4AF37] font-bold">{soldVal}</span>
+                          </div>
+
+                          {/* 🚀 স্টক স্ট্যাটাস ও বাকি থাকা সংখ্যা */}
+                          <div className="bg-[#1A1A1A] px-3 py-1.5 rounded-lg border border-gray-800">
+                            {isOutOfStock ? (
+                              <span className="text-red-400 font-bold flex items-center"><XCircle size={12} className="mr-1"/> Out of Stock</span>
+                            ) : (
+                              <span className="text-green-400 font-bold flex items-center">
+                                <CheckCircle size={12} className="mr-1"/> {stockVal} Remaining
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-gray-800">
+              <button onClick={() => setIsViewModalOpen(false)} className="px-5 py-2 bg-gray-800 text-white rounded-lg text-sm font-medium hover:bg-gray-700">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Modal (অক্ষত রাখা হয়েছে) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
           <div className="bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl flex flex-col max-h-[90vh]">
