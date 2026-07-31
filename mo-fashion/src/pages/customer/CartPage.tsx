@@ -61,30 +61,48 @@ export default function CartPage() {
   }, []);
 
   const safeIncrease = (id: string, size: string, color: string) => {
-    if (cartStore.increaseQuantity) cartStore.increaseQuantity(id);
-    else if (cartStore.updateQuantity) cartStore.updateQuantity(id, size, color, 'increase');
+    if (typeof cartStore.increaseQuantity === 'function') {
+      cartStore.increaseQuantity(id, size, color);
+    } else if (typeof cartStore.updateQuantity === 'function') {
+      cartStore.updateQuantity(id, size, color, 'increase');
+    }
   };
 
   const safeDecrease = (id: string, size: string, color: string) => {
-    if (cartStore.decreaseQuantity) cartStore.decreaseQuantity(id);
-    else if (cartStore.updateQuantity) cartStore.updateQuantity(id, size, color, 'decrease');
+    if (typeof cartStore.decreaseQuantity === 'function') {
+      cartStore.decreaseQuantity(id, size, color);
+    } else if (typeof cartStore.updateQuantity === 'function') {
+      cartStore.updateQuantity(id, size, color, 'decrease');
+    }
   };
 
+  // 🚀 স্মুথ ও ইনস্ট্যান্ট রিমুভ (কোনো পেজ রিলোড ছাড়া)
   const safeRemove = (id: string, size: string, color: string) => {
     try {
-      if (cartStore.removeFromCart) {
-        cartStore.removeFromCart(id);
+      if (typeof cartStore.removeFromCart === 'function') {
+        cartStore.removeFromCart(id, size, color);
+      } else if (typeof cartStore.removeItem === 'function') {
+        cartStore.removeItem(id, size, color);
       }
-      
-      const existingCart = JSON.parse(localStorage.getItem('mo_fashion_cart_storage') || '{}');
-      if (existingCart && existingCart.state && existingCart.state.cartItems) {
-        const newCartItems = existingCart.state.cartItems.filter(
-          (item: any) => !(item.id === id && item.size === size && item.color === color)
-        );
-        existingCart.state.cartItems = newCartItems;
-        localStorage.setItem('mo_fashion_cart_storage', JSON.stringify(existingCart));
-        window.location.reload(); 
+
+      // লোকাল স্টোরেজ সিঙ্ক
+      const savedCart = localStorage.getItem('mo_fashion_cart_storage');
+      if (savedCart) {
+        const parsed = JSON.parse(savedCart);
+        if (parsed?.state?.items) {
+          parsed.state.items = parsed.state.items.filter(
+            (item: any) => !(String(item.id) === String(id) && item.size === size && item.color === color)
+          );
+        }
+        if (parsed?.state?.cartItems) {
+          parsed.state.cartItems = parsed.state.cartItems.filter(
+            (item: any) => !(String(item.id) === String(id) && item.size === size && item.color === color)
+          );
+        }
+        localStorage.setItem('mo_fashion_cart_storage', JSON.stringify(parsed));
       }
+
+      toast.success('Item removed from cart');
     } catch (e) {
       console.error("Delete failed:", e);
     }
@@ -144,7 +162,7 @@ export default function CartPage() {
   
   const grandTotal = Math.max(0, subtotalAfterCoupon + shipping + taxAmount);
 
-  // 🚀 ২. ক্লাউড ডাটাবেসে কুপন ভ্যালিডেট করার API Call
+  // 🚀 ক্লাউড ডাটাবেসে কুপন ভ্যালিডেট করার API Call
   const handleApplyCoupon = async () => {
     if (!couponInput.trim()) {
       toast.error('Please enter a coupon code!');
@@ -153,7 +171,6 @@ export default function CartPage() {
 
     const inputCode = couponInput.trim().toUpperCase();
 
-    // ১. ক্লাউড এপিআই দিয়ে কুপন ভ্যালিডেশন
     try {
       const res = await fetch('http://localhost:5000/api/coupons/validate', {
         method: 'POST',
@@ -178,13 +195,12 @@ export default function CartPage() {
       console.warn("Cloud Coupon API offline, trying local coupons.");
     }
 
-    // ২. ফলব্যাক: লোকালস্টোরেজ থেকে কুপন চেক
     const savedCoupons = JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
     const validCoupon = savedCoupons.find((c: any) => c.code === inputCode && c.status === 'Active');
 
     if (validCoupon) {
-      const discountValue = Number(validCoupon.discountValue);
-      const discountType = validCoupon.type.toLowerCase(); 
+      const discountValue = Number(validCoupon.discountValue || validCoupon.discount || 0);
+      const discountType = (validCoupon.type || 'percentage').toLowerCase(); 
       if (typeof applyCoupon === 'function') {
         applyCoupon({ code: validCoupon.code, discountValue, discountType } as any);
       }
@@ -260,8 +276,8 @@ export default function CartPage() {
                       </Link>
                       
                       <p className="text-sm text-gray-500 mb-4 mt-2 font-medium">
-                        Color: <span className="text-gray-300">{item.color}</span> <span className="mx-2">|</span> 
-                        Size: <span className="text-gray-300">{item.size}</span>
+                        Color: <span className="text-gray-300">{item.color || 'Default'}</span> <span className="mx-2">|</span> 
+                        Size: <span className="text-gray-300">{item.size || 'Standard'}</span>
                       </p>
                       
                       <div className="flex items-center space-x-3">
@@ -272,12 +288,10 @@ export default function CartPage() {
                       </div>
                     </div>
 
-                    <div className="flex sm:flex-col items-center justify-between w-full sm:w-auto sm:items-end gap-4 sm:h-36 py-2 z-10">
+                    {/* 🚀 ফিক্সড রাইট সাইড কন্ট্রোলস (ডিলিট বাটন ও ফিক্সড সাবটোটাল লেআউট) */}
+                    <div className="flex sm:flex-col items-center justify-between w-full sm:w-auto sm:items-end gap-3 py-1 z-10 shrink-0">
                       <button 
-                        onClick={() => {
-                          safeRemove(item.id, item.size, item.color);
-                          toast.success('Item removed from cart.');
-                        }}
+                        onClick={() => safeRemove(item.id, item.size, item.color)}
                         className="text-gray-500 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-full"
                         title="Remove Item"
                       >
@@ -302,9 +316,10 @@ export default function CartPage() {
                         </button>
                       </div>
 
-                      <div className="text-right hidden sm:block">
+                      {/* 🚀 ফিক্সড সাবটোটাল ডিসপ্লে (কখনো কেটে যাবে না) */}
+                      <div className="text-right hidden sm:block mt-1">
                         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Subtotal</p>
-                        <p className="font-bold text-white tracking-wide">{siteSettings.currency} {item.itemSubtotal.toFixed(2)}</p>
+                        <p className="font-bold text-[#D4AF37] tracking-wide text-sm">{siteSettings.currency} {item.itemSubtotal.toFixed(2)}</p>
                       </div>
                     </div>
 
