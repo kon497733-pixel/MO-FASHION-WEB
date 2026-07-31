@@ -1,10 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, CreditCard, Smartphone, Banknote, Tag, MapPin } from 'lucide-react';
+import { ChevronLeft, CreditCard, Smartphone, Banknote, Tag, MapPin, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Helmet } from 'react-helmet-async';
 
 import { useCartStore } from '../../store/useCartStore';
+
+// 🚀 বাংলাদেশের ৬৪ জেলার তালিকা
+const bdDistricts = [
+  "Bagerhat", "Bandarban", "Barguna", "Barishal", "Bhola", "Bogra", "Brahmanbaria", "Chandpur", 
+  "Chattogram", "Chuadanga", "Comilla", "Cox's Bazar", "Dhaka", "Dinajpur", "Faridpur", "Feni", 
+  "Gaibandha", "Gazipur", "Gopalganj", "Habiganj", "Jamalpur", "Jashore", "Jhalokati", "Jhenaidah", 
+  "Joypurhat", "Khagrachhari", "Khulna", "Kishoreganj", "Kurigram", "Kushtia", "Lakshmipur", 
+  "Lalmonirhat", "Madaripur", "Magura", "Manikganj", "Meherpur", "Moulvibazar", "Munshiganj", 
+  "Mymensingh", "Naogaon", "Narail", "Narayanganj", "Narsingdi", "Natore", "Nawabganj", 
+  "Netrokona", "Nilphamari", "Noakhali", "Pabna", "Panchagarh", "Patuakhali", "Pirojpur", 
+  "Rajbari", "Rajshahi", "Rangamati", "Rangpur", "Satkhira", "Shariatpur", "Sherpur", 
+  "Sirajganj", "Sunamganj", "Sylhet", "Tangail", "Thakurgaon"
+];
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -13,6 +26,10 @@ export default function CheckoutPage() {
   const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [paymentMethod, setPaymentMethod] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // সিটির ড্রপডাউন প্রদর্শন স্টেট
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const cityRef = useRef<HTMLDivElement>(null);
 
   // 🚀 লাইভ ক্লাউড সেটিং ডাটা
   const [safeSettings, setSafeSettings] = useState<any>({
@@ -26,17 +43,14 @@ export default function CheckoutPage() {
     enableCOD: true
   });
 
-  // 🚀 ১. ক্লাউড ডাটাবেস (MongoDB API) থেকে রিয়েল-টাইম ডাটা ফেচ করা
   useEffect(() => {
     const loadCheckoutData = async () => {
-      // লোকাল ক্যাশ
       const savedProducts = localStorage.getItem('mo_fashion_products');
       if (savedProducts) setDbProducts(JSON.parse(savedProducts));
 
       const savedSettings = localStorage.getItem('mo_fashion_settings');
       if (savedSettings) setSafeSettings(JSON.parse(savedSettings));
 
-      // ক্লাউড ডাটাবেস সিঙ্ক
       try {
         const [prodRes, settingsRes] = await Promise.all([
           fetch('http://localhost:5000/api/products').catch(() => null),
@@ -60,7 +74,17 @@ export default function CheckoutPage() {
     loadCheckoutData();
   }, []);
 
-  // ডিফল্ট পেমেন্ট মেথড সিলেক্ট
+  // ড্রপডাউনের বাইরে ক্লিক করলে ড্রপডাউন হাইড করার লজিক
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (cityRef.current && !cityRef.current.contains(event.target as Node)) {
+        setShowCityDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   useEffect(() => {
     if (!paymentMethod) {
       if (safeSettings?.enableBkash !== false) setPaymentMethod('bKash');
@@ -70,9 +94,25 @@ export default function CheckoutPage() {
   }, [safeSettings, paymentMethod]);
 
   const [formData, setFormData] = useState({
-    firstName: '', lastName: '', email: '', phone: '',
-    address: '', city: '', postalCode: '', country: 'Bangladesh'
+    firstName: '', 
+    lastName: '', 
+    email: '', 
+    phone: '',
+    address: '', 
+    city: '', 
+    postalCode: '', 
+    country: 'Bangladesh' 
   });
+
+  // ফিল্টার করা জেলাগুলোর লিস্ট (টাইপিংয়ের সাথে সাথে সাজেশন দেখাবে)
+  const filteredDistricts = bdDistricts.filter(district => 
+    district.toLowerCase().includes((formData.city || '').toLowerCase())
+  );
+
+  const handleSelectCity = (district: string) => {
+    setFormData({ ...formData, city: district });
+    setShowCityDropdown(false);
+  };
 
   // রিয়েল-টাইম সাবটোটাল হিসাব
   let subtotalAfterProductDiscount = 0;
@@ -86,7 +126,6 @@ export default function CheckoutPage() {
     return { ...cartItem, dbProduct };
   });
 
-  // 🚀 ডাইনামিক শিপিং লজিক (শহর অনুযায়ী)
   const isInsideChattogram = formData.city.toLowerCase().includes('chattogram') || formData.city.toLowerCase().includes('chittagong');
   const shippingInside = safeSettings.shippingInside !== undefined ? Number(safeSettings.shippingInside) : 60;
   const shippingOutside = safeSettings.shippingOutside !== undefined ? Number(safeSettings.shippingOutside) : 150;
@@ -97,7 +136,6 @@ export default function CheckoutPage() {
 
   const totalBeforeCoupon = subtotalAfterProductDiscount + shipping + taxAmount;
 
-  // কুপন ডিসকাউন্ট হিসাব
   let finalCouponDiscountAmount = 0;
   if (appliedCoupon) {
     if (appliedCoupon.discountType === 'percentage') {
@@ -114,12 +152,15 @@ export default function CheckoutPage() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // 🚀 ২. ক্লাউড ডাটাবেসে অর্ডার সেভ করার API (POST Request)
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault(); 
     
     if (items.length === 0) {
       toast.error("Your cart is empty!");
+      return;
+    }
+    if (!formData.city) {
+      toast.error("Please select or enter your City/District.");
       return;
     }
     if (!paymentMethod) {
@@ -128,18 +169,19 @@ export default function CheckoutPage() {
     }
 
     setIsSubmitting(true);
-    const toastId = toast.loading("Processing your order securely on Cloud Database...");
+    const toastId = toast.loading("Processing your order securely...");
 
     const orderId = `#ORD-${Math.floor(100000 + Math.random() * 900000)}`;
     const customerName = `${formData.firstName} ${formData.lastName}`.trim();
+    const customerEmail = formData.email.trim() || `${formData.phone}@nofashion.com`;
 
     const orderPayload = {
       orderId: orderId,
       customer: customerName,
-      customerInfo: formData,
-      email: formData.email,
+      customerInfo: { ...formData, email: customerEmail },
+      email: customerEmail,
       phone: formData.phone,
-      address: `${formData.address}, ${formData.city} - ${formData.postalCode}, ${formData.country}`,
+      address: `${formData.address}, ${formData.city} ${formData.postalCode ? '- ' + formData.postalCode : ''}, ${formData.country}`,
       date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
       createdAt: new Date().toISOString(),
       total: totalAmount,
@@ -159,12 +201,54 @@ export default function CheckoutPage() {
     };
 
     try {
-      // ১. লোকাল স্টোরেজে ইনস্ট্যান্ট সেভ (অ্যাডমিন অর্ডারের জন্য)
+      // 🚀 ১. কেনা প্রোডাক্টগুলোর স্টক কমানো এবং Sold সংখ্যা বাড়ানো
+      const savedProducts = JSON.parse(localStorage.getItem('mo_fashion_products') || '[]');
+      const updatedProducts = savedProducts.map((p: any) => {
+        const orderedItem = items.find((i: any) => String(i.id) === String(p._id || p.id));
+        if (orderedItem) {
+          const currentStock = Number(p.stock) || 0;
+          const currentSold = Number(p.sold) || 0;
+          const newStock = Math.max(0, currentStock - orderedItem.quantity);
+          const newSold = currentSold + orderedItem.quantity;
+          
+          fetch(`http://localhost:5000/api/products/${p._id || p.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stock: newStock, sold: newSold })
+          }).catch(() => null);
+
+          return {
+            ...p,
+            stock: newStock,
+            sold: newSold,
+            status: newStock <= 0 ? 'Out of Stock' : p.status
+          };
+        }
+        return p;
+      });
+      localStorage.setItem('mo_fashion_products', JSON.stringify(updatedProducts));
+
+      // 🚀 ২. কুপন ইউজ লিমিট কমানো
+      if (appliedCoupon) {
+        const allCoupons = JSON.parse(localStorage.getItem('mo_fashion_coupons') || '[]');
+        const updatedCoupons = allCoupons.map((c: any) => {
+          if (c.code === appliedCoupon.code) {
+            const newUsedCount = (Number(c.used) || 0) + 1;
+            const newStatus = (c.usageLimit && newUsedCount >= c.usageLimit) ? 'Expired' : c.status;
+            return { ...c, used: newUsedCount, status: newStatus };
+          }
+          return c;
+        });
+        localStorage.setItem('mo_fashion_coupons', JSON.stringify(updatedCoupons));
+      }
+
+      // 🚀 ৩. লোকাল স্টোরেজে অর্ডার ও কাস্টমার সেভ করা
       const existingOrders = JSON.parse(localStorage.getItem('mo_fashion_orders') || '[]');
       localStorage.setItem('mo_fashion_orders', JSON.stringify([orderPayload, ...existingOrders]));
 
       const existingCustomers = JSON.parse(localStorage.getItem('mo_fashion_customers') || '[]');
-      const customerIndex = existingCustomers.findIndex((c: any) => c.email === formData.email);
+      const customerIndex = existingCustomers.findIndex((c: any) => c.phone === formData.phone || (c.email && c.email === customerEmail));
+      
       if (customerIndex >= 0) {
         existingCustomers[customerIndex].orders += 1;
         existingCustomers[customerIndex].spent += totalAmount;
@@ -172,7 +256,7 @@ export default function CheckoutPage() {
         existingCustomers.push({
           id: `CUST-${Math.floor(100 + Math.random() * 900)}`,
           name: customerName,
-          email: formData.email,
+          email: customerEmail,
           phone: formData.phone,
           orders: 1,
           spent: totalAmount,
@@ -182,25 +266,20 @@ export default function CheckoutPage() {
       }
       localStorage.setItem('mo_fashion_customers', JSON.stringify(existingCustomers));
 
-      // ২. ক্লাউড ডাটাবেসে সেভ (POST API Call)
-      const response = await fetch('http://localhost:5000/api/orders', {
+      // 🚀 ৪. ক্লাউড ডাটাবেসে সেভ (POST API Call)
+      await fetch('http://localhost:5000/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderPayload)
-      });
+      }).catch(() => null);
 
-      if (response.ok) {
-        toast.success(`Order ${orderId} placed LIVE on Cloud!`, { id: toastId });
-      } else {
-        toast.success(`Order ${orderId} placed successfully!`, { id: toastId });
-      }
-
+      toast.success(`Order ${orderId} placed successfully!`, { id: toastId });
       clearCart();
       setTimeout(() => navigate('/'), 2000);
 
     } catch (error) {
       console.error("Order Error:", error);
-      toast.success(`Order ${orderId} placed successfully!`, { id: toastId });
+      toast.success(`Order placed successfully!`, { id: toastId });
       clearCart();
       setTimeout(() => navigate('/'), 2000);
     } finally {
@@ -224,7 +303,7 @@ export default function CheckoutPage() {
 
         <div className="flex flex-col lg:flex-row gap-10">
           
-          {/* Billing Form */}
+          {/* Shipping Form */}
           <div className="lg:w-2/3 space-y-8">
             <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-xl p-6 shadow-lg">
               <div className="flex justify-between items-center border-b border-[#D4AF37]/10 pb-3 mb-6">
@@ -248,8 +327,9 @@ export default function CheckoutPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-gray-400 text-sm mb-2">Email Address *</label>
-                    <input type="email" name="email" required value={formData.email} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. mail@example.com" />
+                    {/* 🚀 ইমেইল এখন অপশনাল */}
+                    <label className="block text-gray-400 text-sm mb-2">Email Address <span className="text-xs text-gray-500">(Optional)</span></label>
+                    <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. mail@example.com (optional)" />
                   </div>
                   <div>
                     <label className="block text-gray-400 text-sm mb-2">Phone Number *</label>
@@ -263,13 +343,45 @@ export default function CheckoutPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-gray-400 text-sm mb-2">City *</label>
-                    <input type="text" name="city" required value={formData.city} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. Chattogram" />
+                  
+                  {/* 🚀 টাইপ করার সুবিধাসহ সিটির স্মুথ ড্রপডাউন */}
+                  <div className="relative" ref={cityRef}>
+                    <label className="block text-gray-400 text-sm mb-2">City / District *</label>
+                    <input 
+                      type="text" 
+                      name="city"
+                      required 
+                      value={formData.city} 
+                      onChange={(e) => {
+                        handleChange(e);
+                        setShowCityDropdown(true);
+                      }}
+                      onFocus={() => setShowCityDropdown(true)}
+                      className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" 
+                      placeholder="Type district (e.g. Chattogram, Dhaka)" 
+                      autoComplete="off"
+                    />
+                    
+                    {showCityDropdown && filteredDistricts.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-lg shadow-2xl max-h-48 overflow-y-auto z-50 custom-scrollbar">
+                        {filteredDistricts.map((district) => (
+                          <div
+                            key={district}
+                            onMouseDown={() => handleSelectCity(district)}
+                            className="px-4 py-2.5 text-sm text-gray-300 hover:bg-[#D4AF37] hover:text-black cursor-pointer flex items-center justify-between transition-colors"
+                          >
+                            <span>{district}</span>
+                            {formData.city === district && <Check size={14} className="text-black" />}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
+
                   <div>
-                    <label className="block text-gray-400 text-sm mb-2">Postal Code *</label>
-                    <input type="text" name="postalCode" required value={formData.postalCode} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. 4000" />
+                    {/* 🚀 পোস্টাল কোড এখন অপশনাল */}
+                    <label className="block text-gray-400 text-sm mb-2">Postal Code <span className="text-xs text-gray-500">(Optional)</span></label>
+                    <input type="text" name="postalCode" value={formData.postalCode} onChange={handleChange} className="w-full bg-[#111111] border border-gray-700 rounded-md px-4 py-2.5 text-white focus:border-[#D4AF37] focus:outline-none transition-colors" placeholder="e.g. 4000 (optional)" />
                   </div>
                   <div>
                     <label className="block text-gray-400 text-sm mb-2">Country</label>
